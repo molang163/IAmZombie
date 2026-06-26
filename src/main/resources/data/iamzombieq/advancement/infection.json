@@ -1,0 +1,26 @@
+{
+  "parent": "iamzombieq:root",
+  "criteria": {
+    "manual": {
+      "trigger": "minecraft:impossible"
+    }
+  },
+  "display": {
+    "description": {
+      "translate": "advancement.iamzombieq.infection.description"
+    },
+    "frame": "goal",
+    "icon": {
+      "id": "minecraft:zombie_villager_spawn_egg"
+    },
+    "title": {
+      "translate": "advancement.iamzombieq.infection.title"
+    }
+  },
+  "requirements": [
+    [
+      "manual"
+    ]
+  ],
+  "sends_telemetry_event": true
+}

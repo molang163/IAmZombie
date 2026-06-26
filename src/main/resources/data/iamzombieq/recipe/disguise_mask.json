@@ -1,0 +1,13 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    "minecraft:rotten_flesh",
+    "minecraft:leather",
+    "minecraft:leather",
+    "minecraft:string"
+  ],
+  "result": {
+    "id": "iamzombieq:disguise_mask"
+  }
+}

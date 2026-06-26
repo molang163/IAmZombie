@@ -1,0 +1,26 @@
+{
+  "parent": "iamzombieq:root",
+  "criteria": {
+    "manual": {
+      "trigger": "minecraft:impossible"
+    }
+  },
+  "display": {
+    "description": {
+      "translate": "advancement.iamzombieq.drowned.description"
+    },
+    "frame": "goal",
+    "icon": {
+      "id": "minecraft:trident"
+    },
+    "title": {
+      "translate": "advancement.iamzombieq.drowned.title"
+    }
+  },
+  "requirements": [
+    [
+      "manual"
+    ]
+  ],
+  "sends_telemetry_event": true
+}

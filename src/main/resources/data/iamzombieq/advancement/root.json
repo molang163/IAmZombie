@@ -1,0 +1,27 @@
+{
+  "criteria": {
+    "manual": {
+      "trigger": "minecraft:impossible"
+    }
+  },
+  "display": {
+    "announce_to_chat": false,
+    "background": "minecraft:gui/advancements/backgrounds/adventure",
+    "description": {
+      "translate": "advancement.iamzombieq.root.description"
+    },
+    "icon": {
+      "id": "minecraft:zombie_head"
+    },
+    "show_toast": false,
+    "title": {
+      "translate": "advancement.iamzombieq.root.title"
+    }
+  },
+  "requirements": [
+    [
+      "manual"
+    ]
+  ],
+  "sends_telemetry_event": true
+}

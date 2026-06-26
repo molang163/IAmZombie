@@ -1,0 +1,12 @@
+{
+  "variants": {
+    "facing=north,part=foot": { "model": "iamzombieq:block/coffin_foot" },
+    "facing=north,part=head": { "model": "iamzombieq:block/coffin_head" },
+    "facing=east,part=foot": { "model": "iamzombieq:block/coffin_foot", "y": 90 },
+    "facing=east,part=head": { "model": "iamzombieq:block/coffin_head", "y": 90 },
+    "facing=south,part=foot": { "model": "iamzombieq:block/coffin_foot", "y": 180 },
+    "facing=south,part=head": { "model": "iamzombieq:block/coffin_head", "y": 180 },
+    "facing=west,part=foot": { "model": "iamzombieq:block/coffin_foot", "y": 270 },
+    "facing=west,part=head": { "model": "iamzombieq:block/coffin_head", "y": 270 }
+  }
+}

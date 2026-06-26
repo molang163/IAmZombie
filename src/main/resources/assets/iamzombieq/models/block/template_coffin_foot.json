@@ -1,0 +1,24 @@
+{
+  "parent": "minecraft:block/block",
+  "textures": {
+    "particle": "iamzombieq:block/coffin_particle",
+    "bottom": "iamzombieq:block/coffin_bottom",
+    "lid": "iamzombieq:block/coffin_lid_foot",
+    "end": "iamzombieq:block/coffin_end_foot",
+    "side": "iamzombieq:block/coffin_side_foot"
+  },
+  "elements": [
+    {
+      "from": [1, 0, 0],
+      "to": [15, 8, 16],
+      "faces": {
+        "down": { "texture": "#bottom", "cullface": "down" },
+        "up": { "texture": "#lid" },
+        "north": { "texture": "#side", "cullface": "north" },
+        "south": { "texture": "#end" },
+        "west": { "texture": "#side" },
+        "east": { "texture": "#side" }
+      }
+    }
+  ]
+}

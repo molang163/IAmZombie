@@ -1,0 +1,25 @@
+{
+  "parent": "iamzombieq:bed",
+  "criteria": {
+    "manual": {
+      "trigger": "minecraft:impossible"
+    }
+  },
+  "display": {
+    "description": {
+      "translate": "advancement.iamzombieq.coffin.description"
+    },
+    "icon": {
+      "id": "iamzombieq:coffin"
+    },
+    "title": {
+      "translate": "advancement.iamzombieq.coffin.title"
+    }
+  },
+  "requirements": [
+    [
+      "manual"
+    ]
+  ],
+  "sends_telemetry_event": true
+}

@@ -1,0 +1,22 @@
+{
+  "type": "minecraft:block",
+  "pools": [
+    {
+      "rolls": 1.0,
+      "entries": [
+        {
+          "type": "minecraft:item",
+          "name": "iamzombieq:herobrine_head",
+          "functions": [
+            {
+              "function": "minecraft:copy_components",
+              "source": "block_entity",
+              "include": [ "minecraft:custom_name" ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "random_sequence": "iamzombieq:blocks/herobrine_wall_head"
+}

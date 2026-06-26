@@ -1,0 +1,25 @@
+{
+  "parent": "iamzombieq:rotten_flesh",
+  "criteria": {
+    "manual": {
+      "trigger": "minecraft:impossible"
+    }
+  },
+  "display": {
+    "description": {
+      "translate": "advancement.iamzombieq.human_food.description"
+    },
+    "icon": {
+      "id": "minecraft:bread"
+    },
+    "title": {
+      "translate": "advancement.iamzombieq.human_food.title"
+    }
+  },
+  "requirements": [
+    [
+      "manual"
+    ]
+  ],
+  "sends_telemetry_event": true
+}

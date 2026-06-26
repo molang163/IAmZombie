@@ -1,0 +1,26 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "dev.molang.iamzombieq.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "mixins": [
+    "DifficultyCommandMixin",
+    "ItemStackMixin",
+    "LivingEntityMixin",
+    "MinecraftServerMixin",
+    "MobMixin",
+    "PlayerCoffinSleepMixin",
+    "SpiderMixin",
+    "VillagerHostilesSensorMixin",
+    "WanderingTraderMixin"
+  ],
+  "client": [
+    "client.AvatarRendererMixin",
+    "client.CreateWorldScreenGameTabMixin",
+    "client.DifficultyButtonsMixin",
+    "client.LivingEntityRendererSwimMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

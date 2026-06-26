@@ -1,0 +1,13 @@
+{
+  "replace": false,
+  "values": [
+    "#minecraft:wither_immune",
+    "minecraft:obsidian",
+    "minecraft:crying_obsidian",
+    "minecraft:respawn_anchor",
+    "minecraft:ancient_debris",
+    "minecraft:enchanting_table",
+    "minecraft:end_stone",
+    "minecraft:end_stone_bricks"
+  ]
+}

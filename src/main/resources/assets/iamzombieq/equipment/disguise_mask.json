@@ -1,0 +1,14 @@
+{
+  "layers": {
+    "humanoid": [
+      {
+        "texture": "iamzombieq:disguise_mask"
+      }
+    ],
+    "humanoid_baby": [
+      {
+        "texture": "iamzombieq:disguise_mask"
+      }
+    ]
+  }
+}

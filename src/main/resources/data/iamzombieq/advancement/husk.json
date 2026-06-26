@@ -1,0 +1,26 @@
+{
+  "parent": "iamzombieq:sun",
+  "criteria": {
+    "manual": {
+      "trigger": "minecraft:impossible"
+    }
+  },
+  "display": {
+    "description": {
+      "translate": "advancement.iamzombieq.husk.description"
+    },
+    "frame": "goal",
+    "icon": {
+      "id": "minecraft:sand"
+    },
+    "title": {
+      "translate": "advancement.iamzombieq.husk.title"
+    }
+  },
+  "requirements": [
+    [
+      "manual"
+    ]
+  ],
+  "sends_telemetry_event": true
+}
