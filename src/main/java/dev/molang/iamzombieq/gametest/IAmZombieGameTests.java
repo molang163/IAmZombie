@@ -55,6 +55,9 @@ public final class IAmZombieGameTests {
         register(event, "food_human_hunger", hardEnv, false, 100, IAmZombieGameTestBodies::foodHumanHunger);
         register(event, "baby_grow", hardEnv, false, 100, IAmZombieGameTestBodies::babyGrow);
         register(event, "infection_villager", hardEnv, false, 100, IAmZombieGameTestBodies::infectionVillager);
+        register(event, "infection_villager_no_kin_aggro", hardEnv, false, 100, IAmZombieGameTestBodies::infectionVillagerNoKinAggro);
+        register(event, "infection_villager_sweep_grace", hardEnv, false, 100, IAmZombieGameTestBodies::infectionVillagerSweepGrace);
+        register(event, "infection_piglin_sweep_grace", hardEnv, false, 100, IAmZombieGameTestBodies::infectionPiglinSweepGrace);
         register(event, "infection_pig_normal_form_blocked", hardEnv, false, 100, IAmZombieGameTestBodies::infectionPigNormalFormBlocked);
         register(event, "infection_pig_piglin_form_spreads", hardEnv, false, 100, IAmZombieGameTestBodies::infectionPigPiglinFormSpreads);
         register(event, "husk_hunger", hardEnv, false, 100, IAmZombieGameTestBodies::huskHunger);

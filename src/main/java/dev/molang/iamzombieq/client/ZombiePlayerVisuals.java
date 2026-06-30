@@ -273,9 +273,7 @@ public final class ZombiePlayerVisuals {
     private static void applyLivingBodyTransform(ZombieRenderState state, PoseStack poseStack) {
         float scale = state.scale;
         poseStack.scale(scale, scale, scale);
-        if (!state.hasPose(net.minecraft.world.entity.Pose.SLEEPING)) {
-            poseStack.mulPose(com.mojang.math.Axis.YP.rotationDegrees(180.0F - state.bodyRot));
-        }
+        poseStack.mulPose(com.mojang.math.Axis.YP.rotationDegrees(180.0F - state.bodyRot));
         if (state.deathTime > 0.0F) {
             float fall = Mth.sqrt((state.deathTime - 1.0F) / 20.0F * 1.6F);
             poseStack.mulPose(com.mojang.math.Axis.ZP.rotationDegrees(Math.min(fall, 1.0F) * 90.0F));

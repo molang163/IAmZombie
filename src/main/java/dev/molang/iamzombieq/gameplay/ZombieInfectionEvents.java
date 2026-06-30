@@ -129,7 +129,7 @@ public final class ZombieInfectionEvents {
         return Difficulties.toGameDifficulty(difficulty);
     }
 
-    private static boolean convertVillagerToZombieVillager(ServerLevel level, Villager villager, Player attacker) {
+    private static boolean convertVillagerToZombieVillager(ServerLevel level, Villager villager, Player player) {
         ZombieVillager zombieVillager = villager.convertTo(
                 EntityTypes.ZOMBIE_VILLAGER,
                 ConversionParams.single(villager, true, true),
@@ -152,16 +152,25 @@ public final class ZombieInfectionEvents {
                 }
         );
         if (zombieVillager != null) {
-            zombieVillager.setLastHurtByMob(attacker);
+            // RC4-sweep (Option B): the SAME swing's Sweeping-Edge AoE will clip this freshly-spawned kin a moment
+            // later (Player.attack -> doSweepAttack, same tick), seeding it with the player as its last attacker.
+            // Record a short grace window so the deny-list treats that conversion-swing sweep as non-provoking;
+            // genuine later retaliation (a deliberate strike after the window) is preserved.
+            ZombieMobTargetingEvents.recordConversionGrace(zombieVillager, player);
         }
         return zombieVillager != null;
     }
 
-    // Mirrors vanilla Pig#thunderHit's pig -> zombified piglin conversion (ConversionParams.single drop-loot=false,
-    // keep-equipment=true; populateDefaultEquipmentSlots + setPersistenceRequired) and the villager pattern above
-    // (conversion levelEvent + setLastHurtByMob so the new piglin retaliates against the attacker, like the horse
-    // and villager conversions). Works for both Pig and any Piglin/AbstractPiglin victim.
-    private static boolean convertToZombifiedPiglin(ServerLevel level, Mob victim, Player attacker) {
+    // Mirrors vanilla Pig#thunderHit's pig -> zombified piglin conversion (ConversionParams.single(victim, false, true):
+    // keepEquipment=false, preserveCanPickUpLoot=true; populateDefaultEquipmentSlots + setPersistenceRequired) and the villager pattern above
+    // (conversion levelEvent only). The converted mob is seeded with NO attacker, so the kin zombie player stays
+    // IGNORED from tick one (RC4). The one residual provoker is the SAME swing's Sweeping-Edge sweep, which clips
+    // the freshly-spawned kin a moment later in the same Player.attack call; the conversion grace window recorded
+    // below (honoured by ZombieMobTargetingEvents) neutralises that -- and because the kin is a NeutralMob, the
+    // deny-list also clears the sweep-derived persistent anger so it cannot re-acquire the player after the window.
+    // Genuine retaliation still works because a real later strike re-seeds the kin's last attacker (and anger).
+    // Works for both Pig and any Piglin/AbstractPiglin victim.
+    private static boolean convertToZombifiedPiglin(ServerLevel level, Mob victim, Player player) {
         ZombifiedPiglin zombifiedPiglin = victim.convertTo(
                 EntityTypes.ZOMBIFIED_PIGLIN,
                 ConversionParams.single(victim, false, true),
@@ -181,7 +190,7 @@ public final class ZombieInfectionEvents {
                 }
         );
         if (zombifiedPiglin != null) {
-            zombifiedPiglin.setLastHurtByMob(attacker);
+            ZombieMobTargetingEvents.recordConversionGrace(zombifiedPiglin, player);
         }
         return zombifiedPiglin != null;
     }

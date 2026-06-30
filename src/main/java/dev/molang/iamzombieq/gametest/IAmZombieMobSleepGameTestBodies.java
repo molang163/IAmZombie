@@ -13,6 +13,7 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.animal.axolotl.Axolotl;
 import net.minecraft.world.entity.animal.equine.TraderLlama;
 import net.minecraft.world.entity.animal.golem.IronGolem;
+import net.minecraft.world.entity.monster.skeleton.Skeleton;
 import net.minecraft.world.entity.monster.zombie.Zombie;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
@@ -46,7 +47,7 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
  *   <li><b>REINF</b> — the real {@code hurtServer(mobAttack(attacker))} damage pipeline fires
  *       {@code LivingIncomingDamageEvent}; the mod's {@code ZombiePlayerEvents.onIncomingDamage -> reinforceZombiePlayer
  *       -> alertFormMatchedUndead} retargets nearby form-matched undead onto the attacker. We assert the kin retargets.</li>
- *   <li><b>DOOR</b> — {@code CommonHooks.getBreakSpeed(player, doorState, original, absPos)} (the seam vanilla fires
+ *   <li><b>DOOR</b> — {@code EventHooks.getBreakSpeed(player, doorState, original, absPos)} (the seam vanilla fires
  *       from {@code Player.getDestroySpeed}); the mod's {@code ZombiePlayerEvents.onBreakSpeed} boosts the empty-hand
  *       wooden-door break speed x3. We assert the returned speed.</li>
  * </ul>
@@ -207,6 +208,45 @@ final class IAmZombieMobSleepGameTestBodies {
         helper.succeed();
     }
 
+    /**
+     * SLEEP/RC3: breaking ONE half of a 2-part coffin drops EXACTLY ONE coffin item (no dupe). The coffin is a
+     * bed-style two-part block; breaking the FOOT cascades the orphaned HEAD to air via updateShape, and BOTH halves
+     * run the loot table. The fix gates the loot item entry to part=head, so only the head half yields an item ->
+     * exactly one. (Before the fix, both halves dropped -> 2, an infinite dupe.) Break via the level's
+     * destroyBlock(pos, dropBlock=true), the same drops+cascade a survival break takes.
+     */
+    static void coffinBreakDropsExactlyOne(GameTestHelper helper) {
+        BlockPos footRel = new BlockPos(2, 2, 2);
+        BlockPos headRel = new BlockPos(2, 2, 1);
+        Direction facing = Direction.NORTH;
+        Block coffin = dev.molang.iamzombieq.IAmZombieBlocks.COFFIN.get();
+        helper.setBlock(footRel, coffin.defaultBlockState()
+                .setValue(HorizontalDirectionalBlock.FACING, facing)
+                .setValue(dev.molang.iamzombieq.block.CoffinBlock.PART, BedPart.FOOT));
+        helper.setBlock(headRel, coffin.defaultBlockState()
+                .setValue(HorizontalDirectionalBlock.FACING, facing)
+                .setValue(dev.molang.iamzombieq.block.CoffinBlock.PART, BedPart.HEAD));
+
+        // Break the FOOT half WITH drops; the orphaned HEAD is cascaded to air by updateShape and also runs the loot
+        // table. With the part=head loot gate, only the head half yields an item.
+        helper.getLevel().destroyBlock(helper.absolutePos(footRel), true);
+
+        helper.runAfterDelay(5L, () -> {
+            int coffins = 0;
+            for (net.minecraft.world.entity.item.ItemEntity item :
+                    helper.getEntities(EntityTypes.ITEM, footRel, 4.0)) {
+                if (item.getItem().is(IAmZombieItems.COFFIN.get())) {
+                    coffins += item.getItem().getCount();
+                }
+            }
+            if (coffins != 1) {
+                helper.fail("breaking one half of a 2-part coffin must drop exactly 1 coffin (got " + coffins + ")");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
     // ---------------------------------------------------------------------------------------------------------
     // DOOR: empty-hand wooden-door break-speed x3 (DOOR-001) / item-in-hand no boost (DOOR-002)
     // ---------------------------------------------------------------------------------------------------------
@@ -257,5 +297,97 @@ final class IAmZombieMobSleepGameTestBodies {
         PlayerEvent.BreakSpeed event = new PlayerEvent.BreakSpeed(player, state, original, doorAbs);
         NeoForge.EVENT_BUS.post(event);
         return event.getNewSpeed();
+    }
+
+    /**
+     * MOB-GRUDGE (Fix1, vanilla-faithful self-refresh): a monster the player GENUINELY struck stays ALLOWED to target
+     * the zombie player for as long as it remains ENGAGED -- the grudge SELF-REFRESHES on every onChangeTarget
+     * re-assert while it is still live (record gate {@code trueHit || grudged}), so it persists past vanilla's ~100t
+     * lastHurtByMob clear INDEFINITELY while the mob keeps the target. Once the mob LOSES the player (the seam stops
+     * being re-posted, mimicking the player escaping past vanilla's TargetGoal), the grudge is forgiven GRUDGE_TICKS
+     * =200 after the LAST engagement (forgive-after-escape) and the IGNORED deny-list clears its target again. A
+     * Skeleton is an IGNORED-kind monster (classify() has no special case), so absent grudge/retaliation the deny-list
+     * always clears its target on the zombie player. Driven through the SAME real onLivingChangeTarget seam as
+     * clearedTarget; the mob ticks, so vanilla auto-expires lastHurtByMob at ~+100t -- which is exactly why the
+     * +120/+240/+360 re-posts (all past that window, trueHit=false) prove the SELF-REFRESH, not lastHurtByMob, is what
+     * keeps the mob engaged.
+     */
+    static void mobGrudgeStickyRetaliation(GameTestHelper helper) {
+        FakePlayer player = GameTestPlayers.spawnZombieFakePlayer(helper, ZombieForm.NORMAL, ZombieSize.ADULT);
+        // NoAi + invulnerable skeleton on a stone floor: this test drives the deny-list seam directly (clearedTarget
+        // posts the real onLivingChangeTarget), NOT the skeleton's own AI, so NoAi (no wandering) + a stone floor (no
+        // void-fall) + setInvulnerable (no daylight burn -- over the ~660t/33s window an un-armored skeleton would
+        // otherwise burn to death; this mob only CARRIES the target flag, no logic depends on it taking damage) make
+        // the long window deterministic. setInvulnerable also suppresses vanilla's ~100t lastHurtByMob auto-clear,
+        // which is exactly why each engaged step below nulls lastHurtByMob EXPLICITLY instead of relying on that timer.
+        // The ONLY seam posts are this test's explicit clearedTarget() calls -> the refresh schedule is fully
+        // test-controlled (no AI re-post can perturb the timing).
+        helper.setBlock(new BlockPos(2, 1, 2), Blocks.STONE);
+        Skeleton skeleton = helper.spawn(EntityTypes.SKELETON, new BlockPos(2, 2, 2));
+        skeleton.setNoAi(true);
+        skeleton.setInvulnerable(true);
+
+        // t0: a genuine hit. Posting now (trueHit==true) SEEDS the player-grudge (expiry t0+200) and is ALLOWED.
+        skeleton.setLastHurtByMob(player);
+        if (clearedTarget(skeleton, player)) {
+            helper.fail("a freshly-struck IGNORED monster (retaliating) must be ALLOWED to target the zombie player at t0");
+            return;
+        }
+
+        // ENGAGED: re-post every 120t (< GRUDGE_TICKS=200, an 80t margin per gap) while still "fighting". At each
+        // re-post we EXPLICITLY null lastHurtByMob first, so trueHit is deterministically false and ONLY the live
+        // grudge can keep the target allowed -- a stronger, timer-independent proof of self-refresh than relying on
+        // vanilla's ~100t lastHurtByMob auto-clear (which setInvulnerable suppresses). Each live re-post SELF-REFRESHES
+        // the grudge to now+200, so it stays allowed indefinitely while engaged. Nested runAfterDelay is RELATIVE-to-
+        // now, so 120 + 120 + 120 + 300 = +120/+240/+360/+660.
+        helper.runAfterDelay(120L, () -> {                 // +120: refresh -> expiry +320
+            if (!skeleton.isAlive()) {
+                helper.fail("precondition: the struck skeleton must still be alive at +120t");
+                return;
+            }
+            skeleton.setLastHurtByMob(null);               // trueHit=false: only the self-refreshing grudge remains
+            if (clearedTarget(skeleton, player)) {
+                helper.fail("while engaged (+120t, lastHurtByMob cleared), the self-refreshing grudge must keep the monster ALLOWED to target the player");
+                return;
+            }
+            helper.runAfterDelay(120L, () -> {             // +240: refresh -> expiry +440
+                if (!skeleton.isAlive()) {
+                    helper.fail("precondition: the struck skeleton must still be alive at +240t");
+                    return;
+                }
+                skeleton.setLastHurtByMob(null);
+                if (clearedTarget(skeleton, player)) {
+                    helper.fail("while engaged (+240t), the self-refreshing grudge must keep the monster ALLOWED to target the player");
+                    return;
+                }
+                helper.runAfterDelay(120L, () -> {         // +360: LAST engaged post, refresh -> expiry +560
+                    if (!skeleton.isAlive()) {
+                        helper.fail("precondition: the struck skeleton must still be alive at +360t");
+                        return;
+                    }
+                    skeleton.setLastHurtByMob(null);
+                    if (clearedTarget(skeleton, player)) {
+                        helper.fail("while engaged (+360t), the self-refreshing grudge must keep the monster ALLOWED to target the player");
+                        return;
+                    }
+                    // ESCAPE: STOP posting. The last engaged post (+360) set expiry +560, so the grudge is forgiven
+                    // 200t after the last engagement. Wait 300t (GRUDGE_TICKS + 100t margin) WITHOUT re-posting, then
+                    // post once more (still no fresh hit -> lastHurtByMob null): the grudge has lapsed, so the IGNORED
+                    // deny-list must CLEAR the target again.
+                    helper.runAfterDelay(300L, () -> {     // +660: expiry +560, 100t past -> lapsed
+                        if (!skeleton.isAlive()) {
+                            helper.fail("precondition: the struck skeleton must still be alive at +660t");
+                            return;
+                        }
+                        skeleton.setLastHurtByMob(null);
+                        if (!clearedTarget(skeleton, player)) {
+                            helper.fail("after the mob loses the player (no re-post for GRUDGE_TICKS), the forgiven grudge must let the IGNORED deny-list CLEAR the target again");
+                            return;
+                        }
+                        helper.succeed();
+                    });
+                });
+            });
+        });
     }
 }

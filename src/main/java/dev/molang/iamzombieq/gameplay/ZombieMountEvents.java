@@ -83,9 +83,9 @@ public final class ZombieMountEvents {
             return;
         }
 
-        // Only VANILLA (living) horses are refused. ZombieHorse/SkeletonHorse extend Horse, so this early
-        // block must exclude them or it would also cancel+return for undead horses and make the ZombieHorse
-        // feed handler below unreachable (B5).
+        // Only VANILLA (living) horses are refused. ZombieHorse/SkeletonHorse extend AbstractHorse (siblings of
+        // Horse, not subclasses), so isNormalHorse's instanceof Horse is already false for them; this early block
+        // therefore never fires for undead horses and the ZombieHorse feed handler below stays reachable (B5).
         if (isNormalHorse(event.getTarget()) && !ZombieMountRules.canMount(true, MountKind.NORMAL_HORSE, false)) {
             event.setCanceled(true);
             event.setCancellationResult(InteractionResult.SUCCESS_SERVER);
@@ -268,8 +268,9 @@ public final class ZombieMountEvents {
         return stack.is(Items.ROTTEN_FLESH) || stack.is(IAmZombieItems.SUPER_ROTTEN_FLESH.get());
     }
 
-    // A vanilla (living) horse: the blocked mount kind. ZombieHorse/SkeletonHorse extend Horse but are
-    // undead and rideable by zombie players, so they are explicitly excluded from the "normal horse" check.
+    // A vanilla (living) horse: the blocked mount kind. ZombieHorse/SkeletonHorse extend AbstractHorse (siblings of
+    // Horse, not subclasses), so instanceof Horse already excludes them; the explicit !ZombieHorse/!SkeletonHorse
+    // guards are defensive, keeping these undead, zombie-rideable mounts out of the "normal horse" check.
     private static boolean isNormalHorse(Entity target) {
         return target instanceof Horse && !(target instanceof ZombieHorse) && !(target instanceof SkeletonHorse);
     }

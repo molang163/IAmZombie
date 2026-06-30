@@ -9,12 +9,15 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EntityTypes;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.animal.pig.Pig;
 import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.neoforged.neoforge.common.CommonHooks;
 import net.neoforged.neoforge.common.util.FakePlayer;
 import net.neoforged.neoforge.event.EventHooks;
+import net.neoforged.neoforge.event.entity.living.LivingChangeTargetEvent;
 
 import dev.molang.iamzombieq.IAmZombieItems;
 
@@ -197,7 +200,167 @@ final class IAmZombieGameTestBodies {
         helper.succeed();
     }
 
+    /**
+     * T-infection-villager-no-kin-aggro (RC4): a freshly-infected ZombieVillager must NOT target the kin zombie
+     * player that infected it. The old bug seeded the player as the converted mob's lastHurtByMob, so its
+     * HurtByTargetGoal turned the new zombie on its own creator. After the conversion registers and the target goals
+     * get several ticks, the new ZombieVillager's target must not be the player. (Genuine retaliation is unaffected:
+     * the RC4 fix only deletes the spawn-time attacker seed and touches no retaliation code.) HARD env -> infection
+     * chance 1.0 (deterministic conversion).
+     */
+    static void infectionVillagerNoKinAggro(GameTestHelper helper) {
+        FakePlayer player = GameTestPlayers.spawnZombieFakePlayer(helper, ZombieForm.NORMAL, ZombieSize.ADULT);
+        ServerLevel level = helper.getLevel();
+
+        Villager villager = helper.spawn(EntityTypes.VILLAGER, new BlockPos(1, 2, 1));
+        villager.hurtServer(level, level.damageSources().playerAttack(player), Float.MAX_VALUE);
+
+        // Give the conversion AND the target goals (HurtByTargetGoal / NearestAttackableTargetGoal) a few ticks to
+        // run — a leaked attacker-seed would have made the new zombie pick the player as its target by now — but
+        // keep the delay short and the radius generous so the AI-driven ZombieVillager hasn't wandered out of range
+        // (radius 4 stays well inside the 8-block test padding, so it never sees a sibling test's zombie villager).
+        helper.runAfterDelay(8L, () -> {
+            net.minecraft.world.entity.monster.zombie.ZombieVillager zombie =
+                    helper.getEntities(EntityTypes.ZOMBIE_VILLAGER, new BlockPos(1, 2, 1), 4.0)
+                            .stream().findFirst().orElse(null);
+            if (zombie == null) {
+                helper.fail("expected a ZombieVillager after the zombie player killed the villager");
+                return;
+            }
+            if (zombie.getTarget() == player) {
+                helper.fail("a freshly-infected ZombieVillager must NOT target the kin zombie player that infected it");
+                return;
+            }
+            // (No positive-control re-strike here: the RC4 fix only DELETES the spawn-time attacker seed and touches
+            // no retaliation code, so it cannot disable genuine retaliation by construction; and a re-strike this
+            // soon after conversion is absorbed by the mob's hurt-immunity frames, making such a check flaky.)
+            helper.succeed();
+        });
+    }
+
+    /**
+     * T-infection-villager-sweep-grace (RC4-sweep / Option B): the conversion swing's Sweeping-Edge AoE clips the
+     * freshly-converted ZombieVillager in the SAME Player.attack call, seeding it with the player as its last
+     * attacker -> HurtByTargetGoal -> the deny-list's retaliating branch. The conversion grace window must
+     * NEUTRALISE that same-swing sweep so the kin does NOT hunt its converting player -- asserted AFTER the window
+     * expires, because a window-only suppression that did not CLEAR the artifact would let the kin's unconditional
+     * NearestAttackableTargetGoal re-acquire the player here. A DELIBERATE strike after the window must still make it
+     * retaliate. The kill drives the real LivingDeathEvent (records the grace marker); the sweep's targeting effect
+     * is reproduced by directly seeding the kin's last-attacker (a confound-free equivalent of the sweep's
+     * hurtServer -- targeting depends only on lastHurtByMob, not the damage, so this dodges the converted mob's
+     * hurt-immunity frames that make a re-strike flaky). HARD env -> infection chance 1.0 (deterministic conversion).
+     */
+    static void infectionVillagerSweepGrace(GameTestHelper helper) {
+        FakePlayer player = GameTestPlayers.spawnZombieFakePlayer(helper, ZombieForm.NORMAL, ZombieSize.ADULT);
+        ServerLevel level = helper.getLevel();
+
+        Villager villager = helper.spawn(EntityTypes.VILLAGER, new BlockPos(1, 2, 1));
+        villager.hurtServer(level, level.damageSources().playerAttack(player), Float.MAX_VALUE);
+
+        // +2: the ZombieVillager has registered; reproduce the conversion-swing sweep clip on the kin.
+        helper.runAfterDelay(2L, () -> {
+            net.minecraft.world.entity.monster.zombie.ZombieVillager kin =
+                    helper.getEntities(EntityTypes.ZOMBIE_VILLAGER, new BlockPos(1, 2, 1), 4.0)
+                            .stream().findFirst().orElse(null);
+            if (kin == null) {
+                helper.fail("expected a ZombieVillager after the zombie player killed the villager");
+                return;
+            }
+            kin.setLastHurtByMob(player);
+
+            // +30 (well past the 10-tick grace window AND the sweep-sim hurt-immunity frames): the sweep-seeded
+            // retaliation must be CLEARED, not merely delayed -- the kin must not be hunting its converter.
+            helper.runAfterDelay(28L, () -> {
+                if (kin.getTarget() == player) {
+                    helper.fail("after the conversion grace window, the kin must NOT target its converting player from the same-swing sweep");
+                    return;
+                }
+                // Fix1/RC4 boundary: the grace-suppressed conversion sweep must NOT have created a player-grudge, or
+                // the kin would be allowed to hunt its converter for GRUDGE_TICKS. Re-posting the real seam here (no
+                // fresh hit; lastHurtByMob was nulled by the grace branch) must return DENIED -> no grudge exists.
+                if (!deniedTarget(kin, player)) {
+                    helper.fail("a grace-suppressed conversion sweep must not create a player-grudge: the kin must stay DENIED past the grace window");
+                    return;
+                }
+                // Positive control: a DELIBERATE strike after the window must make genuine retaliation work.
+                kin.setLastHurtByMob(player);
+                helper.runAfterDelay(3L, () -> {
+                    if (kin.getTarget() != player) {
+                        helper.fail("after the grace window, a deliberate strike must make the kin retaliate against the player");
+                        return;
+                    }
+                    helper.succeed();
+                });
+            });
+        });
+    }
+
+    /**
+     * T-infection-piglin-sweep-grace (RC4-sweep / Option B, NeutralMob path): same as the villager case but the kin
+     * is a ZombifiedPiglin. The grace branch must clear the sweep-derived persistent ANGER as well as the target, so
+     * an anger-driven scan cannot re-acquire the converting player after the window. A deliberate strike after the
+     * window must still make it retaliate. Form-gated path -> ZOMBIFIED_PIGLIN-form player + Pig victim; HARD env.
+     */
+    static void infectionPiglinSweepGrace(GameTestHelper helper) {
+        FakePlayer player = GameTestPlayers.spawnZombieFakePlayer(helper, ZombieForm.ZOMBIFIED_PIGLIN, ZombieSize.ADULT);
+        ServerLevel level = helper.getLevel();
+
+        Pig pig = helper.spawn(EntityTypes.PIG, new BlockPos(1, 2, 1));
+        pig.hurtServer(level, level.damageSources().playerAttack(player), Float.MAX_VALUE);
+
+        helper.runAfterDelay(2L, () -> {
+            net.minecraft.world.entity.monster.zombie.ZombifiedPiglin kin =
+                    helper.getEntities(EntityTypes.ZOMBIFIED_PIGLIN, new BlockPos(1, 2, 1), 4.0)
+                            .stream().findFirst().orElse(null);
+            if (kin == null) {
+                helper.fail("expected a ZombifiedPiglin after the zombified-piglin-form player killed the pig");
+                return;
+            }
+            // Reproduce the sweep's FULL targeting signal on this NeutralMob kin: the last-attacker AND the
+            // target-derived persistent anger a real sweep induces (the converting hit makes the piglin angry at its
+            // converter, and its NearestAttackableTargetGoal<Player> is anger-gated). The grace branch must clear
+            // BOTH -- else an anger-driven scan re-acquires the player after the window. Seeding the anger here is
+            // what makes the post-window isAngryAt assertion actually EXERCISE the anger-clear branch (without it the
+            // assert would be vacuous, since setLastHurtByMob alone latches no anger).
+            kin.setLastHurtByMob(player);
+            kin.setPersistentAngerTarget(net.minecraft.world.entity.EntityReference.<net.minecraft.world.entity.LivingEntity>of(player));
+            kin.startPersistentAngerTimer();
+
+            helper.runAfterDelay(28L, () -> {
+                if (kin.getTarget() == player) {
+                    helper.fail("after the conversion grace window, the zombified-piglin kin must NOT target its converting player from the same-swing sweep");
+                    return;
+                }
+                if (kin.isAngryAt(player, level)) {
+                    helper.fail("after the conversion grace window, the sweep-derived persistent anger toward the converting player must be cleared");
+                    return;
+                }
+                if (!deniedTarget(kin, player)) {
+                    helper.fail("a grace-suppressed conversion sweep must not create a player-grudge: the zombified-piglin kin must stay DENIED past the grace window");
+                    return;
+                }
+                kin.setLastHurtByMob(player);
+                helper.runAfterDelay(3L, () -> {
+                    if (kin.getTarget() != player) {
+                        helper.fail("after the grace window, a deliberate strike must make the zombified-piglin kin retaliate against the player");
+                        return;
+                    }
+                    helper.succeed();
+                });
+            });
+        });
+    }
+
     /** Runs the real eat: start the use (fires the Start hook), then finish it (fires the Finish event). */
+    // Drive the real central targeting seam (like the MOB tests) and report whether the deny-list NULLED the target.
+    // A grace-suppressed sweep must leave the kin with NO player-grudge, so re-posting here returns DENIED past the
+    // 10-tick grace window even though no fresh hit was dealt.
+    private static boolean deniedTarget(Mob mob, FakePlayer player) {
+        LivingChangeTargetEvent event = CommonHooks.onLivingChangeTarget(
+                mob, player, LivingChangeTargetEvent.LivingTargetType.MOB_TARGET);
+        return event.getNewAboutToBeSetTarget() == null;
+    }
+
     private static void feed(FakePlayer player, ItemStack food) {
         player.setItemInHand(InteractionHand.MAIN_HAND, food);
         player.startUsingItem(InteractionHand.MAIN_HAND);

@@ -28,7 +28,11 @@ public final class IAmZombieItems {
     public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(IAmZombieMod.MOD_ID);
     private static final Identifier OP_BLOCKS_TAB = Identifier.fromNamespaceAndPath("minecraft", "op_blocks");
 
-    public static final DeferredItem<BlockItem> COFFIN = ITEMS.registerSimpleBlockItem(IAmZombieBlocks.COFFIN);
+    public static final DeferredItem<BlockItem> COFFIN = ITEMS.registerItem(
+            "coffin",
+            properties -> new BlockItem(IAmZombieBlocks.COFFIN.get(), properties),
+            () -> new Item.Properties().stacksTo(1)
+    );
 
     public static final DeferredItem<Item> SUPER_ROTTEN_FLESH = ITEMS.registerSimpleItem(
             "super_rotten_flesh",

@@ -45,6 +45,7 @@
   "iamzombieq.message.coffin.recipes_unlocked": "想睡觉？试试棺材。",
   "iamzombieq.message.coffin.rested": "一觉睡到天黑。",
   "iamzombieq.message.coffin.respawn_set_only": "重生点记下了，可天没黑下来。",
+  "iamzombieq.message.coffin.respawn_set": "重生点记下了。",
   "iamzombieq.message.coffin.lying_down": "你躺进了棺材……",
   "iamzombieq.message.coffin.players_sleeping": "%1$s/%2$s 只僵尸正在长眠",
   "iamzombieq.message.coffin.disturbed": "有什么惊扰了你的长眠！",

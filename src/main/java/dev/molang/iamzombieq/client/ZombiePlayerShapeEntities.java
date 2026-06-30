@@ -116,6 +116,16 @@ public final class ZombiePlayerShapeEntities {
         shape.yHeadRotO = player.yHeadRotO;
         shape.tickCount = player.tickCount;
         shape.setPose(player.getPose());
+        // RC2: mirror the player's sleeping block position onto the cached shape so vanilla
+        // LivingEntityRenderer.extractRenderState derives a non-null bedOrientation (the coffin FACING) + the
+        // STANDING eyeHeight, which on the LIVE shape-submit render path (the real player is never submitted) drive
+        // BOTH the bed-centering translate and the flat sleeping yaw. The shape is cached and reused across frames,
+        // so CLEAR the pos when the player is awake -- otherwise the body would stay flat-on-its-back after standing.
+        if (player.getSleepingPos().isPresent()) {
+            shape.setSleepingPos(player.getSleepingPos().get());
+        } else {
+            shape.clearSleepingPos();
+        }
         shape.setOnGround(player.onGround());
         shape.setDeltaMovement(player.getDeltaMovement());
         shape.setInvisible(player.isInvisible());

@@ -4,7 +4,8 @@ import net.minecraft.world.level.block.SkullBlock;
 
 /**
  * Custom {@link SkullBlock.Type} for the Herobrine head, mirroring how vanilla heads are typed (skeleton,
- * zombie, ...). Unlike the vanilla {@link SkullBlock.Types} enum entries it self-registers into the shared
+ * zombie, ...). Just as the vanilla {@link SkullBlock.Types} enum entries self-register in their constructor
+ * ({@code TYPES.put(name, this)}), this standalone non-enum type registers itself into the shared
  * {@link SkullBlock.Type#TYPES} map so the {@code kind} codec (block NBT + the {@code minecraft:head} item model)
  * can resolve "herobrine", and so the client skull renderer/model lookup accepts it. The skin is fixed (no
  * player profile), so there is nothing else to carry here.

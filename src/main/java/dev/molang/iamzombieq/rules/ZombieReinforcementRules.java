@@ -3,10 +3,11 @@ import dev.molang.iamzombieq.rules.difficulty.GameDifficulty;
 import dev.molang.iamzombieq.rules.core.ZombieForm;
 
 /**
- * Pure, Minecraft-free rules backing the official zombie-reinforcement mechanic applied to a zombie PLAYER. Mirrors
- * vanilla {@code Zombie#hurtServer} reinforcement: when a zombie player takes damage from a living attacker, nearby
- * form-matched undead are alerted (retargeted onto the attacker), and on HARD difficulty with mob-spawning enabled the
- * player may spawn matching-form reinforcements that ignore the mob cap.
+ * Pure, Minecraft-free rules backing the official zombie-reinforcement mechanic applied to a zombie PLAYER. Combines
+ * two vanilla zombie behaviours: when a zombie player takes damage from a living attacker, nearby form-matched undead
+ * are alerted (retargeted onto the attacker even without line of sight) -- modelled on vanilla
+ * {@code HurtByTargetGoal#alertOthers} -- and on HARD difficulty with mob-spawning enabled the player may spawn
+ * matching-form reinforcements that ignore the mob cap, mirroring vanilla {@code Zombie#hurtServer}.
  *
  * <p>This class holds ONLY plain-type math/predicates so it stays unit-testable: the alert AABB dimensions, the
  * form&rarr;entity-type-id mapping, the spawn offset / spawn-position predicate, the HARD+gamerule gate, and the
@@ -22,7 +23,13 @@ public final class ZombieReinforcementRules {
     public static final int REINFORCEMENT_RANGE_MAX = 40;
     /** Other players must be at least this far away for a reinforcement to spawn (vanilla 7.0). */
     public static final double MIN_PLAYER_DISTANCE = 7.0;
-    /** Reinforcements only spawn where the surface light level is at most this (vanilla monster cap). */
+    /**
+     * Documentation/test-only light ceiling for the {@link #isSpawnPositionViable} predicate below; NOT a vanilla
+     * constant. Vanilla has no monster-spawn light level of 9 -- the overworld gate is a probabilistic uniform[0,7]
+     * sample plus block-light 0 (Monster#isDarkEnoughToSpawn / dimension_type monster_spawn_light_level). The LIVE
+     * reinforcement path gates instead on SpawnPlacements.checkSpawnRules(REINFORCEMENT) (ZombiePlayerEvents), so
+     * this constant never affects runtime spawns; it only documents that reinforcements prefer the dark.
+     */
     public static final int MAX_SPAWN_LIGHT = 9;
 
     /** Per-spawn decay applied to the caller's reinforcement chance (vanilla -0.05). */
@@ -38,7 +45,13 @@ public final class ZombieReinforcementRules {
     public static final double LEADER_HEALTH_MULTIPLIER_MIN = 1.0;
     public static final double LEADER_HEALTH_MULTIPLIER_SPAN = 3.0;
 
-    /** Alert AABB half-extents around the zombie player (vanilla retarget box ~111 wide / ~21 tall). */
+    /**
+     * Alert AABB half-extents around the zombie player. The ~111-wide box is a representative value within vanilla's
+     * range, not a fixed vanilla number: vanilla HurtByTargetGoal#alertOthers inflates by the LIVE FOLLOW_RANGE
+     * (base 35 -> box ~71 wide, but Zombie#handleAttributes boosts FOLLOW_RANGE by random*1.5*difficulty as
+     * ADD_MULTIPLIED_TOTAL, reaching ~176 wide on hard). The ~21-tall extent matches vanilla's fixed
+     * inflate(range, 10, range).
+     */
     public static final double ALERT_BOX_INFLATE_XZ = 55.5;
     public static final double ALERT_BOX_INFLATE_Y = 10.5;
 
@@ -86,9 +99,11 @@ public final class ZombieReinforcementRules {
     }
 
     /**
-     * Whether a candidate reinforcement spawn position is viable. Mirrors the vanilla checks: a solid top surface to
-     * stand on, a dark-enough spot (light at most {@value #MAX_SPAWN_LIGHT}), no player within
-     * {@value #MIN_PLAYER_DISTANCE}, and no collision/obstruction at the spawn box.
+     * Documentation predicate approximating the conditions the LIVE path enforces via SpawnPlacements
+     * (isSpawnPositionOk + checkSpawnRules(REINFORCEMENT)): a solid top surface to stand on, a dark-enough spot
+     * (modelled here as light at most {@value #MAX_SPAWN_LIGHT}; vanilla's real test is a probabilistic
+     * uniform[0,7] sample, not a fixed 9), no player within {@value #MIN_PLAYER_DISTANCE}, and no
+     * collision/obstruction at the spawn box. Not consulted at runtime.
      */
     public static boolean isSpawnPositionViable(boolean solidTopSurface, int lightLevel, boolean playerWithin7, boolean collisionFree) {
         return solidTopSurface

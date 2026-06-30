@@ -155,12 +155,18 @@ public final class ZombieBalanceRules {
         return 25L;
     }
 
-    /** Break-speed multiplier an empty-handed vanilla-style zombie gets when breaking a wooden door. */
+    /**
+     * Deliberate MOD buff (not vanilla): empty-handed zombie players break wooden doors 3x faster. Vanilla zombies
+     * have no break-speed multiplier at all -- they smash doors via the timed BreakDoorGoal (a fixed 240-tick break,
+     * HARD-gated), which has no destroy-speed component. 3.0F coincides with the oak-door hardness
+     * (Blocks.OAK_DOOR.strength(3.0F)).
+     */
     public static final float WOODEN_DOOR_BREAK_MULTIPLIER = 3.0F;
 
     /**
-     * Whether a zombie player should get the vanilla-zombie wooden-door break-speed boost: only when the main hand
-     * is empty AND the targeted block is a wooden door. Keeps trapdoors/fence-gates out for vanilla alignment.
+     * Whether a zombie player should get the mod's wooden-door break-speed buff (see WOODEN_DOOR_BREAK_MULTIPLIER --
+     * a mod feature, not vanilla): only when the main hand is empty AND the targeted block is a wooden door. Keeps
+     * trapdoors/fence-gates out so the buff applies only to the wooden doors vanilla zombies actually break.
      */
     public static boolean shouldBoostWoodenDoorBreak(boolean mainHandEmpty, boolean blockIsWoodenDoor) {
         return mainHandEmpty && blockIsWoodenDoor;

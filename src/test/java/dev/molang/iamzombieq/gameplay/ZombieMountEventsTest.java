@@ -198,8 +198,9 @@ class ZombieMountEventsTest {
 
     @Test
     void normalHorseRefusalDoesNotBlockUndeadHorseFeeding() throws IOException {
-        // B5: ZombieHorse/SkeletonHorse extend Horse. The early "normal horse refused" block must exclude
-        // them, or the cancel+return would make the ZombieHorse feed handler below it unreachable.
+        // B5: ZombieHorse/SkeletonHorse extend AbstractHorse (siblings of Horse, not subclasses), so they are not
+        // instanceof Horse; the early "normal horse refused" block must still exclude them via isNormalHorse so the
+        // ZombieHorse feed handler below stays reachable.
         String source = Files.readString(SOURCE);
         assertTrue(source.contains("isNormalHorse(event.getTarget())"),
                 "the early horse-refusal block must use the undead-excluding isNormalHorse check, not a bare instanceof Horse");

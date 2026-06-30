@@ -1,5 +1,6 @@
 package dev.molang.iamzombieq.gameplay;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -75,5 +76,19 @@ class ZombieInfectionEventsSourceTest {
                 "a canceled Pre must abort the infection (return before the conversion)");
         assertTrue(body.contains("ZombieEventPublisher.post(new ZombieInfectedEvent(serverPlayer, victim, EntityTypes.ZOMBIFIED_PIGLIN))"),
                 "a successful pig/piglin conversion should fire the ZombieInfectedEvent observer");
+    }
+
+    /**
+     * RC4: the infection conversions must NOT seed the killing player as the converted mob's last attacker. Doing so
+     * (the old {@code setLastHurtByMob(attacker)}) faked a retaliation that defeated the undead-kin targeting
+     * immunity, so a freshly-infected zombie villager / zombified piglin attacked the very zombie player that
+     * infected it. The whole file must therefore be free of {@code setLastHurtByMob}; genuine retaliation still
+     * works because vanilla re-sets it on an actual later strike.
+     */
+    @Test
+    void infectionConversionsSeedNoAttackerSoKinStaysIgnored() throws IOException {
+        String src = Files.readString(SOURCE);
+        assertFalse(src.contains("setLastHurtByMob"),
+                "the infection conversions must not seed the player as the converted mob's attacker (RC4 kin-aggro fix)");
     }
 }

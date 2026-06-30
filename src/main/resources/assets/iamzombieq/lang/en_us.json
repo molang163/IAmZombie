@@ -45,6 +45,7 @@
   "iamzombieq.message.coffin.recipes_unlocked": "Need sleep? Try a coffin.",
   "iamzombieq.message.coffin.rested": "You slept until night.",
   "iamzombieq.message.coffin.respawn_set_only": "Respawn point saved, but night never came.",
+  "iamzombieq.message.coffin.respawn_set": "Respawn point saved.",
   "iamzombieq.message.coffin.lying_down": "You lie down in the coffin…",
   "iamzombieq.message.coffin.players_sleeping": "%1$s/%2$s zombies resting",
   "iamzombieq.message.coffin.disturbed": "Something disturbed your rest!",

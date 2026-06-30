@@ -123,7 +123,9 @@ public class CoffinBlock extends HorizontalDirectionalBlock {
                 IAmZombieAdvancements.award(serverPlayer, IAmZombieAdvancements.COFFIN);
                 setCoffinRespawn(serverLevel, serverPlayer, headPos);
                 serverLevel.playSound(null, headPos, SoundEvents.RESPAWN_ANCHOR_SET_SPAWN, SoundSource.BLOCKS, 1.0F, 1.0F);
-                serverPlayer.sendOverlayMessage(Component.translatable("iamzombieq.message.coffin.respawn_set_only"));
+                // Night (or a clockless dimension): night has already arrived / there is no night to wait for, so use
+                // the neutral "respawn saved" line -- NOT respawn_set_only, whose "but night never came" is false here.
+                serverPlayer.sendOverlayMessage(Component.translatable("iamzombieq.message.coffin.respawn_set"));
                 yield InteractionResult.SUCCESS_SERVER;
             }
             case PASS_THROUGH, BED_EXPLODES -> InteractionResult.PASS;

@@ -130,12 +130,15 @@ class ZombiePlayerEventsSourceTest {
         assertTrue(alert.contains("ally.setTarget(attacker)"), "alerted undead should retarget the attacker");
         assertTrue(alert.contains("piglin.startPersistentAngerTimer()"),
                 "zombified piglins (neutral) should get persistent anger before retargeting");
+        assertTrue(alert.contains("candidate.getTarget() == null"),
+                "Fix2: the call-for-help must alert only IDLE kin (target==null), matching vanilla alertOthers");
     }
 
     @Test
     void officialReinforcementSpawnMirrorsVanillaHardGateAndSpawnChecks() throws IOException {
         // N7 reinforce: HARD + doMobSpawning gate, per-player chance roll, vanilla spawn-placement/spawn-rule checks
-        // (solid top + light<=9), no-player-within-7 + collision checks, mob-cap-ignoring add, and a -0.05 penalty.
+        // (solid top + a dark-enough spot via checkSpawnRules' probabilistic uniform[0,7] test, not a flat light<=9),
+        // no-player-within-7 + collision checks, mob-cap-ignoring add, and a -0.05 penalty.
         String source = Files.readString(SOURCE);
         String spawn = source.substring(
                 source.indexOf("private static void attemptSpawnReinforcements"),
@@ -146,7 +149,7 @@ class ZombiePlayerEventsSourceTest {
                 "a per-player reinforcement-chance roll should gate spawning");
         assertTrue(spawn.contains("EntitySpawnReason.REINFORCEMENT"), "reinforcements should use the REINFORCEMENT spawn reason");
         assertTrue(spawn.contains("SpawnPlacements.isSpawnPositionOk") && spawn.contains("SpawnPlacements.checkSpawnRules"),
-                "solid-top + light<=9 should be enforced by the vanilla spawn-placement/spawn-rule checks");
+                "solid-top + a dark-enough spot should be enforced by the vanilla spawn-placement/spawn-rule checks");
         assertTrue(spawn.contains("level.hasNearbyAlivePlayer(xt, yt, zt, ZombieReinforcementRules.MIN_PLAYER_DISTANCE)"),
                 "no player within 7 blocks should be required");
         assertTrue(spawn.contains("level.noCollision(reinforcement)") && spawn.contains("level.isUnobstructed(reinforcement)"),

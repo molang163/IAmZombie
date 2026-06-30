@@ -1,5 +1,9 @@
 package dev.molang.iamzombieq.gameplay;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.UUID;
+
 import dev.molang.iamzombieq.IAmZombieConfig;
 import dev.molang.iamzombieq.rules.DisguiseRules;
 import dev.molang.iamzombieq.rules.core.ZombieForm;
@@ -25,8 +29,10 @@ import net.minecraft.world.phys.AABB;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.entity.living.LivingChangeTargetEvent;
 import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.entity.player.TradeWithVillagerEvent;
+import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 
 /**
@@ -71,6 +77,94 @@ public final class ZombieMobTargetingEvents {
     /** How long (ticks) a seeded brain ATTACK_TARGET memory lasts; re-applied each scan so it stays fresh. */
     private static final long ATTACKER_SEED_MEMORY_TICKS = 200L;
 
+    // RC4-sweep (Option B): per-converted-kin grace window. Keyed by the converted mob's UUID -> the converting
+    // player + the game-tick the window expires. Populated at conversion (ZombieInfectionEvents.recordConversionGrace)
+    // so the deny-list below neutralises the SAME swing's Sweeping-Edge sweep -- which clips the freshly-spawned kin
+    // in the same Player.attack call and seeds lastHurtByMob=player. Bounded LinkedHashMap (markers live ~10 ticks,
+    // so the cap is never realistically reached) with insertion-order eviction, so a kin that despawns before its
+    // target is ever changed cannot leak its marker. Server-thread-only access, like the mod's other transient maps
+    // (mirrors the ZombieMountEvents bounded-LinkedHashMap idiom).
+    private static final int CONVERSION_GRACE_CAP = 256;
+    private static final Map<UUID, ConversionGrace> CONVERSION_GRACE =
+            new LinkedHashMap<>(16, 0.75F, false) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<UUID, ConversionGrace> eldest) {
+                    return size() > CONVERSION_GRACE_CAP;
+                }
+            };
+
+    // ~10 ticks (0.5s). Long enough to cover the same-swing sweep (seeded the SAME tick as conversion) plus the
+    // 1-2 tick latency before the kin's HurtByTargetGoal fires its setTarget; short enough to expire before the
+    // converting player could land a DELIBERATE second strike -- a Sweeping-Edge sweep needs a full-strength attack
+    // (attackStrengthScale > 0.9F) and a sword's attack-strength ticker takes ~12.5 ticks to recharge that far.
+    private static final int CONVERSION_GRACE_TICKS = 10;
+
+    /** A conversion grace marker: who converted the kin, and the game-tick at which the window expires. */
+    private record ConversionGrace(UUID convertingPlayer, long expiryGameTime) {
+    }
+
+    // A2 player-grudge (sticky retaliation): per-mob transient "grudge" so a monster the player GENUINELY attacked
+    // keeps being ALLOWED to target the player for a bounded window. Fixes the bug where an IGNORED-table mob
+    // (zombie/skeleton/spider) gave up ~100t after the player's last hit -- when vanilla LivingEntity.baseTick() nulls
+    // lastHurtByMob, `retaliating` flips false and the every-tick deny-list re-assert cancels the target -- and could
+    // then never re-aggro (the same deny-list also cancelled its NearestAttackableTargetGoal re-acquisition). Keyed by
+    // the mob's UUID -> the grudged player + the game-tick the grudge expires. Bounded LinkedHashMap (cap 256,
+    // insertion-order eviction); self-expires by game-tick, dropped lazily on read in hasLiveGrudge, force-cleared on
+    // logout/stop. Server-thread-only, exactly like CONVERSION_GRACE above.
+    private static final int GRUDGE_CAP = 256;
+    private static final Map<UUID, Grudge> PLAYER_GRUDGE =
+            new LinkedHashMap<>(16, 0.75F, false) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<UUID, Grudge> eldest) {
+                    return size() > GRUDGE_CAP;
+                }
+            };
+
+    // FORGIVE-TAIL length (ticks): how long a grudge OUTLIVES the mob's goal still targeting the player. The grudge
+    // self-refreshes every tick the goal re-asserts setTarget(player) (see the RECORD/REFRESH block in onChangeTarget),
+    // so while the mob is ENGAGED it never expires -- this value takes effect ONLY after vanilla's own TargetGoal drops
+    // the player (escape / past follow-range / ~300t unseen). During the tail the mob stays WILLING to re-aggro if it
+    // re-acquires the player; once the tail lapses with no re-acquisition it FORGIVES (resumes ignoring). 200t (10s)
+    // sits within vanilla's own ~300t unseen-memory ballpark and bridges a brief out-of-sight gap; vanilla hard-caps
+    // any over-stick regardless (the grudge only ALLOWS a target, it can't force a goal to keep one).
+    private static final int GRUDGE_TICKS = 200;
+
+    /** A player-grudge marker: which player the mob bears a grudge against, and the game-tick the grudge expires. */
+    private record Grudge(UUID grudgePlayer, long expiryGameTime) {
+    }
+
+    /**
+     * RC4-sweep (Option B): record the conversion grace window for a freshly-converted kin. Called by
+     * {@link ZombieInfectionEvents} right after the {@code convertTo}, so {@link #onChangeTarget} can neutralise the
+     * conversion swing's Sweeping-Edge sweep (which clips the new kin in the same {@code Player.attack} call, seeding
+     * {@code lastHurtByMob = converter}) instead of letting it provoke retaliation. No-op off-server.
+     */
+    public static void recordConversionGrace(Mob convertedKin, Player convertingPlayer) {
+        if (!(convertedKin.level() instanceof ServerLevel level)) {
+            return;
+        }
+        CONVERSION_GRACE.put(
+                convertedKin.getUUID(),
+                new ConversionGrace(convertingPlayer.getUUID(), level.getGameTime() + CONVERSION_GRACE_TICKS));
+    }
+
+    /**
+     * A2 player-grudge reader with LAZY expiry: true iff {@code mob} currently bears a LIVE grudge against this exact
+     * {@code player}. Mirrors the grace branch's drop-on-expiry (player-match gate, then a {@code <= expiry} live
+     * check; on lapse the marker is removed in-line). Checked by UUID (not getTarget()), so it works for goal- and
+     * brain-driven mobs alike. Server-thread-only, like CONVERSION_GRACE.
+     */
+    private static boolean hasLiveGrudge(LivingEntity mob, Player player, ServerLevel serverLevel) {
+        Grudge grudge = PLAYER_GRUDGE.get(mob.getUUID());
+        if (grudge != null && grudge.grudgePlayer().equals(player.getUUID())) {
+            if (serverLevel.getGameTime() <= grudge.expiryGameTime()) {
+                return true;
+            }
+            PLAYER_GRUDGE.remove(mob.getUUID());
+        }
+        return false;
+    }
+
     @SubscribeEvent
     public static void onChangeTarget(LivingChangeTargetEvent event) {
         LivingEntity mob = event.getEntity();
@@ -95,8 +189,60 @@ public final class ZombieMobTargetingEvents {
             return;
         }
 
-        // Preserve retaliation: a mob the player just struck may fight back.
-        boolean retaliating = mob.getLastHurtByMob() == player;
+        // RC4-sweep (Option B): if this mob is a freshly-converted kin still inside its conversion grace window and
+        // the target about to be set is its converting player, treat it as the SAME swing's Sweeping-Edge sweep
+        // (retaliation the player never intended) and neutralise it. NON-CONSUMING: the marker survives the whole
+        // window (removed only on expiry below) because the kin's artifact-independent NearestAttackableTargetGoal
+        // can acquire the player a tick BEFORE the sweep seeds lastHurtByMob -- consuming on first use would burn the
+        // marker with no artifact present and let the real sweep retaliation slip through. Clearing lastHurtByMob,
+        // GUARDED to the converter (so a third party's revenge record / sweep-derived anger is never erased), flips
+        // `retaliating` false so once the window lapses the IGNORED deny-list permanently denies the unconditional
+        // re-acquisition; for a NeutralMob the sweep-derived persistent anger is cleared too. Genuine later
+        // retaliation is preserved -- a real post-window strike re-seeds lastHurtByMob.
+        ConversionGrace grace = CONVERSION_GRACE.get(mob.getUUID());
+        if (grace != null && grace.convertingPlayer().equals(player.getUUID())) {
+            if (serverLevel.getGameTime() <= grace.expiryGameTime()) {
+                if (mob.getLastHurtByMob() == player) {
+                    mob.setLastHurtByMob(null);
+                    if (mob instanceof NeutralMob neutral) {
+                        neutral.setPersistentAngerTarget(null);
+                        neutral.setPersistentAngerEndTime(NeutralMob.NO_ANGER_END_TIME);
+                    }
+                }
+                event.setNewAboutToBeSetTarget(null);
+                return;
+            }
+            CONVERSION_GRACE.remove(mob.getUUID());
+        }
+
+        // A2 player-grudge RECORD/REFRESH (sticky retaliation) -- the ONLY place a grudge is created. A grudge is
+        // BORN only on a genuine hit (trueHit: getLastHurtByMob()==player) and then SELF-REFRESHES while still live:
+        // every tick the mob's vanilla TargetGoal.canContinueToUse re-asserts setTarget(player), onChangeTarget fires
+        // again, and an already-live grudge (grudged) re-arms the window. So the grudge survives for as long as the
+        // mob actually keeps the player as its target and expires only GRUDGE_TICKS AFTER its goal stops targeting the
+        // player (vanilla drops the target on escape / past follow-range / ~300t unseen) -- a forgive-tail, NOT a
+        // fixed timer from the last hit. This is the vanilla-faithful "chase until you escape, then forgive" feel.
+        // Read grudged BEFORE the put: the refresh must never bootstrap a grudge from nothing, so the FIRST put on any
+        // mob necessarily has grudged=false and therefore REQUIRES trueHit. Placed AFTER the CONVERSION_GRACE
+        // early-return above: inside a live grace window that branch already returned AND nulled lastHurtByMob, so a
+        // grace-suppressed conversion-swing sweep can never reach here (trueHit=false) and a freshly-converted kin has
+        // no prior grudge (grudged=false) -- it can never start one (RC4-safe by construction). NOT gated on
+        // newTarget==player. Bounded by vanilla's own target-drop: the grudge only ALLOWS a target, it cannot force a
+        // goal to keep one, so the every-tick refresh loop ends the moment vanilla drops the player.
+        boolean trueHit = mob.getLastHurtByMob() == player;
+        boolean grudged = hasLiveGrudge(mob, player, serverLevel);
+        if (trueHit || grudged) {
+            PLAYER_GRUDGE.put(
+                    mob.getUUID(),
+                    new Grudge(player.getUUID(), serverLevel.getGameTime() + GRUDGE_TICKS));
+        }
+
+        // Preserve retaliation: a mob the player just struck may fight back -- now also a mob bearing a LIVE
+        // player-grudge (it genuinely attacked the player and is still engaged), so it stays engaged for as long as
+        // its own goal keeps the player, plus the GRUDGE_TICKS forgive-tail after it loses the player. Reuse the
+        // trueHit/grudged reads above (grudged captured PRE-refresh) -- do not re-read hasLiveGrudge here, which would
+        // observe the just-written refresh and is redundant.
+        boolean retaliating = trueHit || grudged;
         // Preserve neutral-mob anger (an angered zombified piglin pack, a provoked iron golem, …).
         boolean angeredNeutral = mob instanceof NeutralMob neutral && neutral.isAngryAt(player, serverLevel);
 
@@ -181,9 +327,10 @@ public final class ZombieMobTargetingEvents {
 
     /**
      * G19 trade gate: block a zombie player from OPENING villager / wandering-trader trades unless disguised.
-     * Cancelling the interaction stops vanilla {@code AbstractVillager.mobInteract} from running
-     * {@code startTrading}/{@code openTradingScreen}. {@link AbstractVillager} covers both {@code Villager} and
-     * {@code WanderingTrader}.
+     * Cancelling the interaction stops the merchant's {@code mobInteract} -- {@code Villager.mobInteract}
+     * (-> startTrading -> openTradingScreen) and {@code WanderingTrader.mobInteract} (-> openTradingScreen) --
+     * from running. {@link AbstractVillager} is the common supertype matched here, covering both {@code Villager}
+     * and {@code WanderingTrader}.
      */
     @SubscribeEvent
     public static void onMerchantInteract(PlayerInteractEvent.EntityInteract event) {
@@ -222,6 +369,23 @@ public final class ZombieMobTargetingEvents {
         }
         // hurtAndBreak no-ops off-server and fires the proper head-slot break hook; spend exactly one point.
         head.hurtAndBreak(1, player, EquipmentSlot.HEAD);
+    }
+
+    // Transient-map cleanup: both CONVERSION_GRACE (RC4-sweep) and PLAYER_GRUDGE (A2 sticky retaliation) self-expire by
+    // game-tick (dropped lazily in onChangeTarget / hasLiveGrudge when expired, evicted by their caps), but a player
+    // who logs out, or a server stop, must not strand entries naming that player. Mirrors the
+    // ZombieFoodEvents/ZombieMountEvents transient-map cleanup.
+    @SubscribeEvent
+    public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
+        UUID playerId = event.getEntity().getUUID();
+        CONVERSION_GRACE.values().removeIf(grace -> grace.convertingPlayer().equals(playerId));
+        PLAYER_GRUDGE.values().removeIf(grudge -> grudge.grudgePlayer().equals(playerId));
+    }
+
+    @SubscribeEvent
+    public static void onServerStopped(ServerStoppedEvent event) {
+        CONVERSION_GRACE.clear();
+        PLAYER_GRUDGE.clear();
     }
 
     private static boolean isZombiePlayer(Player player) {

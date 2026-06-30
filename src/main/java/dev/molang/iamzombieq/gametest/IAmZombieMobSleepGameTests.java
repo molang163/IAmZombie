@@ -54,10 +54,16 @@ public final class IAmZombieMobSleepGameTests {
 
         // SLEEP: a zombie player's bed right-click explodes the bed.
         register(event, "sleep_bed_explodes_on_right_click", hardEnv, IAmZombieMobSleepGameTestBodies::sleepBedExplodesOnRightClick);
+        register(event, "coffin_break_drops_one", hardEnv, IAmZombieMobSleepGameTestBodies::coffinBreakDropsExactlyOne);
 
         // DOOR: empty-hand wooden-door break-speed x3 / item-in-hand no boost.
         register(event, "door_empty_hand_boosts_wooden_door_break", hardEnv, IAmZombieMobSleepGameTestBodies::doorEmptyHandBoostsWoodenDoorBreak);
         register(event, "door_item_in_hand_no_boost", hardEnv, IAmZombieMobSleepGameTestBodies::doorItemInHandNoBoost);
+
+        // MOB-GRUDGE (Fix1, vanilla-faithful self-refresh): re-posts every 120t prove the grudge keeps the mob allowed
+        // while engaged (past vanilla's 100t lastHurtByMob); then a 300t silent gap proves forgive-after-escape
+        // (succeed at +660). Needs a long maxTicks (760 leaves ~100t headroom past the +660 succeed checkpoint).
+        register(event, "mob_grudge_sticky_retaliation", hardEnv, 760, IAmZombieMobSleepGameTestBodies::mobGrudgeStickyRetaliation);
     }
 
     private static void register(
@@ -65,10 +71,19 @@ public final class IAmZombieMobSleepGameTests {
             String name,
             Holder<TestEnvironmentDefinition<?>> environment,
             Consumer<GameTestHelper> body) {
+        register(event, name, environment, 100, body);
+    }
+
+    private static void register(
+            RegisterGameTestsEvent event,
+            String name,
+            Holder<TestEnvironmentDefinition<?>> environment,
+            int maxTicks,
+            Consumer<GameTestHelper> body) {
         TestData<Holder<TestEnvironmentDefinition<?>>> info = new TestData<>(
                 environment,
                 modId(STRUCTURE),
-                100,          // maxTicks
+                maxTicks,     // maxTicks
                 0,            // setupTicks
                 true,         // required
                 Rotation.NONE,

@@ -502,10 +502,13 @@ public final class ZombiePlayerEvents {
     }
 
     /**
-     * Official zombie-reinforcement applied to the zombie PLAYER, fired on each damage-by-living-entity event. Mirrors
-     * vanilla {@code Zombie#hurtServer}: (1) ALERT nearby form-matched undead onto the attacker even without line of
-     * sight, and (2) on HARD + {@code doMobSpawning} attempt to spawn matching-FORM reinforcements (capped, mob-cap
-     * ignoring). The giant form has no vanilla counterpart and does neither.
+     * Official zombie-reinforcement applied to the zombie PLAYER, fired on each damage-by-living-entity event. Combines
+     * two distinct vanilla zombie behaviours: (1) ALERT nearby form-matched undead onto the attacker even without line
+     * of sight -- vanilla's {@code HurtByTargetGoal#alertOthers} (HURT_BY_TARGETING.ignoreLineOfSight(), wired via
+     * setAlertOthers); like vanilla this now recruits only idle kin (getTarget() == null), with two remaining
+     * deviations -- a fixed ~111-block alert box rather than vanilla's live follow-range, and no !isAlliedTo
+     * team-exclusion -- and (2) on HARD + {@code doMobSpawning}, vanilla {@code Zombie#hurtServer}'s spawn of
+     * matching-FORM reinforcements (capped, mob-cap ignoring). The giant form has no vanilla counterpart and does neither.
      */
     private static void reinforceZombiePlayer(ServerPlayer player, LivingEntity attacker) {
         if (!(player.level() instanceof ServerLevel level) || attacker == player) {
@@ -528,10 +531,13 @@ public final class ZombiePlayerEvents {
     }
 
     /**
-     * Retarget every alive, form-matched undead in the ~111x21x111 alert box onto the attacker, even without line of
-     * sight (vanilla reinforcement retargeting). Uses a single class-filtered AABB scan (not a per-block sweep). The
-     * zombified piglin (a neutral mob) needs persistent anger established before setTarget; the always-hostile zombie
-     * family is retargeted directly.
+     * Retarget every alive, form-matched, currently idle undead (getTarget() == null) in the ~111x21x111 alert box onto
+     * the attacker, even without line of sight (modelled on vanilla {@code HurtByTargetGoal#alertOthers}, which uses
+     * ignoreLineOfSight and likewise only recruits kin whose current target is null, so a kin already fighting is not
+     * yanked off; the two remaining deviations are the fixed ~111x21x111 box vs vanilla's live follow-range and the
+     * omitted !isAlliedTo team-exclusion). Uses a single class-filtered AABB scan (not a per-block sweep). The zombified
+     * piglin (a neutral mob) needs persistent anger established before setTarget; the always-hostile zombie family is
+     * retargeted directly.
      */
     private static void alertFormMatchedUndead(ServerLevel level, ServerPlayer player, LivingEntity attacker,
             EntityType<? extends Mob> reinforcementType) {
@@ -544,7 +550,7 @@ public final class ZombiePlayerEvents {
         // setTarget(itself) -> it attacks itself and dies ("the zombie suicides after hitting me"). Genuine kin
         // still rally onto the attacker; only the attacker is spared from targeting itself.
         for (Mob ally : level.getEntitiesOfClass(Mob.class, area, candidate ->
-                candidate != attacker && candidate.getType() == reinforcementType && candidate.isAlive() && candidate.canAttack(attacker))) {
+                candidate != attacker && candidate.getType() == reinforcementType && candidate.isAlive() && candidate.canAttack(attacker) && candidate.getTarget() == null)) {
             if (ally instanceof ZombifiedPiglin piglin) {
                 // Establish anger BEFORE setTarget: setTarget fires LivingChangeTargetEvent, and the
                 // undead-ignore-zombie-player handler would otherwise null a target that is a zombie player before
@@ -559,7 +565,8 @@ public final class ZombiePlayerEvents {
     /**
      * Try to spawn matching-FORM reinforcements for the zombie player, mirroring vanilla {@code Zombie#hurtServer}:
      * only on HARD difficulty with {@code doMobSpawning} enabled, gated by a per-player reinforcement chance
-     * (0-0.1, with possible leader bonus), at offsets (0 or +-7..40 on X/Y/Z), requiring a viable surface (light<=9,
+     * (0-0.1, with possible leader bonus), at offsets (0 or +-7..40 on X/Y/Z), requiring a viable surface (vanilla
+     * checkSpawnRules(REINFORCEMENT): a dark-enough spot via the probabilistic uniform[0,7] test, not a flat light<=9;
      * solid top, no player within 7, no collision). One successful spawn per damage event; each costs a -0.05 penalty.
      * Reinforcements ignore the mob cap (direct {@code addFreshEntityWithPassengers}).
      */
@@ -591,8 +598,9 @@ public final class ZombiePlayerEvents {
             int yt = originY + ZombieReinforcementRules.spawnOffset(reinforcementMagnitude(random), reinforcementSign(random));
             int zt = originZ + ZombieReinforcementRules.spawnOffset(reinforcementMagnitude(random), reinforcementSign(random));
             BlockPos spawnPos = new BlockPos(xt, yt, zt);
-            // Solid top surface + light<=9 are enforced by the vanilla spawn-placement + spawn-rules checks for the
-            // type (the testable predicate ZombieReinforcementRules.isSpawnPositionViable documents the contract).
+            // Solid top surface + a dark-enough spot are enforced by the vanilla spawn-placement + spawn-rules checks
+            // for the type (checkSpawnRules(REINFORCEMENT) -> the real probabilistic uniform[0,7] darkness test, NOT a
+            // flat light<=9; ZombieReinforcementRules.isSpawnPositionViable only documents the contract, not the gate).
             if (!net.minecraft.world.entity.SpawnPlacements.isSpawnPositionOk(reinforcementType, level, spawnPos)
                     || !net.minecraft.world.entity.SpawnPlacements.checkSpawnRules(reinforcementType, level, EntitySpawnReason.REINFORCEMENT, spawnPos, level.getRandom())) {
                 continue;

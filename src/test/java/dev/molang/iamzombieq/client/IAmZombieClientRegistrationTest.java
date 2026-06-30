@@ -224,4 +224,26 @@ class IAmZombieClientRegistrationTest {
         assertTrue(method.contains("finally {"), "the guard must be restored after exceptions too");
         assertTrue(method.contains("renderingFirstPersonArm = false"), "the reentry guard should be cleared after rendering");
     }
+
+    @Test
+    void zombiePlayerSleepingPoseMirrorsSleepingPosOntoShape() throws IOException {
+        String shapeEntities = Files.readString(Path.of("src/main/java/dev/molang/iamzombieq/client/ZombiePlayerShapeEntities.java"));
+        String method = shapeEntities.substring(
+                shapeEntities.indexOf("private static void syncShape"),
+                shapeEntities.indexOf("private static final class CachedShape")
+        );
+
+        // RC2: the LIVE third-person render submits the cached SHAPE entity through vanilla LivingEntityRenderer,
+        // which lays a sleeper FLAT + CENTERED only when the render state's bedOrientation is non-null. Vanilla
+        // derives that orientation from the entity's sleeping block position, so syncShape must mirror the player's
+        // sleeping pos onto the shape -- and CLEAR it when awake, since the shape is cached and reused across frames
+        // (a stale pos would keep the body flat after standing up). The visual itself is only confirmable via
+        // runClient (GL), so this source scan pins the load-bearing data flow the headless harness can verify.
+        assertTrue(method.contains("player.getSleepingPos()"),
+                "syncShape must read the player's sleeping block position");
+        assertTrue(method.contains("shape.setSleepingPos("),
+                "syncShape must set the sleeping pos on the shape so vanilla derives a non-null bedOrientation (coffin facing)");
+        assertTrue(method.contains("shape.clearSleepingPos()"),
+                "syncShape must clear the shape's sleeping pos when the player is awake (the shape is cached/reused)");
+    }
 }
