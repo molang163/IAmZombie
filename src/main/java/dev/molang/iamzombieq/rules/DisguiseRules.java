@@ -1,8 +1,5 @@
 package dev.molang.iamzombieq.rules;
 
-import dev.molang.iamzombieq.IAmZombieItems;
-import net.minecraft.world.item.ItemStack;
-
 /**
  * Pure-logic decision for whether a zombie player is "passing as human" by wearing the crude disguise mask
  * (G12). A disguised zombie may open villager / wandering-trader trades (G19); the crude mask does NOT fool
@@ -11,12 +8,22 @@ import net.minecraft.world.item.ItemStack;
  *
  * <p>The {@link #DISGUISE_MASK_ID} constant mirrors the registered item id ({@code iamzombieq:disguise_mask})
  * so the rule can be unit-tested without bootstrapping the Minecraft item registry; the live
- * {@link #isDisguisedAsHuman(ItemStack)} adapter compares against the registered {@code IAmZombieItems.DISGUISE_MASK}
- * item directly so the two can never drift.
+ * {@code ItemStack} adapter ({@code gameplay.ZombieMobTargetingAdapter.isDisguisedAsHuman}) compares against the
+ * registered {@code IAmZombieItems.DISGUISE_MASK} item directly so the two can never drift.
  */
 public final class DisguiseRules {
-    /** Registered id of the disguise mask head item (mirrors {@code IAmZombieItems.DISGUISE_MASK}). */
-    public static final String DISGUISE_MASK_ID = "iamzombieq:disguise_mask";
+    /**
+     * Single source of truth for the disguise-mask registry PATH (no namespace, no Minecraft types). The item
+     * registration, its equipment-asset id, and {@link #DISGUISE_MASK_ID} are all composed from this one constant so
+     * the three can never drift apart.
+     */
+    public static final String DISGUISE_MASK_PATH = "disguise_mask";
+
+    /**
+     * Registered id of the disguise mask head item, composed from {@link #DISGUISE_MASK_PATH}; equals
+     * {@code iamzombieq:disguise_mask} and mirrors the registered {@code IAmZombieItems.DISGUISE_MASK}.
+     */
+    public static final String DISGUISE_MASK_ID = "iamzombieq:" + DISGUISE_MASK_PATH;
 
     private DisguiseRules() {
     }
@@ -26,13 +33,5 @@ public final class DisguiseRules {
      */
     public static boolean isDisguiseMaskId(String itemId) {
         return DISGUISE_MASK_ID.equals(itemId);
-    }
-
-    /**
-     * True when the stack worn on the head is the crude disguise mask. An empty stack (no headgear) is never a
-     * disguise.
-     */
-    public static boolean isDisguisedAsHuman(ItemStack head) {
-        return head != null && !head.isEmpty() && head.is(IAmZombieItems.DISGUISE_MASK.get());
     }
 }

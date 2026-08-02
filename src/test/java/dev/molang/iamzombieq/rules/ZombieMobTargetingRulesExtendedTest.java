@@ -112,4 +112,41 @@ class ZombieMobTargetingRulesExtendedTest {
             }
         }
     }
+
+    @Test
+    void typedAndLegacyEntriesMatchIndependentExpectationsAcrossEveryOverrideCombination() {
+        for (MobKind kind : MobKind.values()) {
+            for (ZombieForm form : ZombieForm.values()) {
+                for (boolean retaliating : new boolean[] {false, true}) {
+                    for (boolean angeredNeutral : new boolean[] {false, true}) {
+                        boolean expected = !(retaliating || angeredNeutral) && !expectedAttacks(kind, form);
+                        TargetingOverrides overrides = new TargetingOverrides(retaliating, angeredNeutral);
+                        String inputs = kind + "/" + form
+                                + " retaliating=" + retaliating
+                                + " angeredNeutral=" + angeredNeutral;
+
+                        assertEquals(expected, ZombieMobTargetingRules.shouldIgnore(kind, form, overrides),
+                                "typed context: " + inputs);
+                        assertEquals(expected, ZombieMobTargetingRules.shouldIgnore(
+                                kind, form, retaliating, angeredNeutral), "legacy bridge: " + inputs);
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    void eitherOverrideShortCircuitsBeforeNullKindAndFormReachTheMatrix() {
+        for (TargetingOverrides overrides : new TargetingOverrides[] {
+                new TargetingOverrides(true, false),
+                new TargetingOverrides(false, true),
+                new TargetingOverrides(true, true)
+        }) {
+            assertFalse(ZombieMobTargetingRules.shouldIgnore(null, null, overrides),
+                    "the typed override should return before the attacker matrix: " + overrides);
+            assertFalse(ZombieMobTargetingRules.shouldIgnore(
+                            null, null, overrides.retaliating(), overrides.angeredNeutral()),
+                    "the legacy bridge should preserve the same observable short-circuit: " + overrides);
+        }
+    }
 }

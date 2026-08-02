@@ -6,18 +6,14 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.InteractionHand;
-import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.animal.equine.Horse;
-import net.minecraft.world.entity.animal.equine.ZombieHorse;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.common.util.FakePlayer;
-import net.neoforged.neoforge.event.EventHooks;
 
 import dev.molang.iamzombieq.IAmZombieConfig;
 import dev.molang.iamzombieq.IAmZombieItems;
@@ -54,7 +50,7 @@ final class IAmZombieFoodInfGameTestBodies {
         player.removeEffect(MobEffects.ABSORPTION);
         player.removeEffect(MobEffects.HUNGER);
 
-        feed(player, new ItemStack(Items.GOLDEN_APPLE));
+        GameTestSeams.feed(player, new ItemStack(Items.GOLDEN_APPLE));
 
         if (!assertEffect(helper, player, MobEffects.ABSORPTION, 0, "golden_apple -> Absorption I")) {
             return;
@@ -75,7 +71,7 @@ final class IAmZombieFoodInfGameTestBodies {
         player.removeEffect(MobEffects.RESISTANCE);
         player.removeEffect(MobEffects.HUNGER);
 
-        feed(player, new ItemStack(Items.ENCHANTED_GOLDEN_APPLE));
+        GameTestSeams.feed(player, new ItemStack(Items.ENCHANTED_GOLDEN_APPLE));
 
         if (!assertEffect(helper, player, MobEffects.ABSORPTION, 1, "enchanted_golden_apple -> Absorption II")) {
             return;
@@ -99,7 +95,7 @@ final class IAmZombieFoodInfGameTestBodies {
         player.removeEffect(MobEffects.REGENERATION);
         player.removeEffect(MobEffects.HUNGER);
 
-        feed(player, new ItemStack(Items.PUFFERFISH));
+        GameTestSeams.feed(player, new ItemStack(Items.PUFFERFISH));
 
         if (!assertEffect(helper, player, MobEffects.ABSORPTION, 0, "pufferfish -> Absorption I")) {
             return;
@@ -125,7 +121,7 @@ final class IAmZombieFoodInfGameTestBodies {
         player.removeEffect(MobEffects.NIGHT_VISION);
         player.removeEffect(MobEffects.HUNGER);
 
-        feed(player, new ItemStack(Items.SPIDER_EYE));
+        GameTestSeams.feed(player, new ItemStack(Items.SPIDER_EYE));
 
         if (!assertEffect(helper, player, MobEffects.NIGHT_VISION, 0, "spider_eye -> Night Vision")) {
             return;
@@ -147,7 +143,7 @@ final class IAmZombieFoodInfGameTestBodies {
         player.removeEffect(MobEffects.HUNGER);
         player.removeEffect(MobEffects.NAUSEA);
 
-        feed(player, new ItemStack(Items.COOKED_PORKCHOP));
+        GameTestSeams.feed(player, new ItemStack(Items.COOKED_PORKCHOP));
 
         if (!assertEffect(helper, player, MobEffects.HUNGER, IAmZombieConfig.HUMAN_FOOD_HUNGER_AMPLIFIER.get(), "cooked_porkchop -> Hunger at the configured human-food amplifier")) {
             return;
@@ -169,7 +165,7 @@ final class IAmZombieFoodInfGameTestBodies {
         player.removeEffect(MobEffects.SLOWNESS);
         player.removeEffect(MobEffects.HUNGER);
 
-        feed(player, new ItemStack(Items.COOKIE));
+        GameTestSeams.feed(player, new ItemStack(Items.COOKIE));
 
         if (!assertEffect(helper, player, MobEffects.SLOWNESS, 0, "cookie (SWEET) -> Slowness I")) {
             return;
@@ -190,7 +186,7 @@ final class IAmZombieFoodInfGameTestBodies {
         FakePlayer player = GameTestPlayers.spawnZombieFakePlayer(helper, ZombieForm.NORMAL, ZombieSize.ADULT);
         player.removeEffect(MobEffects.STRENGTH);
 
-        feed(player, new ItemStack(IAmZombieItems.SUPER_ROTTEN_FLESH.get()));
+        GameTestSeams.feed(player, new ItemStack(IAmZombieItems.SUPER_ROTTEN_FLESH.get()));
 
         if (!assertEffect(helper, player, MobEffects.STRENGTH, IAmZombieConfig.SUPER_ROTTEN_FLESH_STRENGTH_AMPLIFIER.get(), "super_rotten_flesh -> Strength at the configured amplifier")) {
             return;
@@ -208,7 +204,7 @@ final class IAmZombieFoodInfGameTestBodies {
         player.removeEffect(MobEffects.SLOW_FALLING);
         player.removeEffect(MobEffects.NAUSEA);
 
-        feed(player, new ItemStack(Items.CHORUS_FRUIT));
+        GameTestSeams.feed(player, new ItemStack(Items.CHORUS_FRUIT));
 
         if (!assertEffect(helper, player, MobEffects.SLOW_FALLING, 0, "chorus_fruit -> Slow Falling")) {
             return;
@@ -228,7 +224,7 @@ final class IAmZombieFoodInfGameTestBodies {
         player.removeEffect(MobEffects.NAUSEA);
         player.removeEffect(MobEffects.HUNGER);
 
-        feed(player, new ItemStack(Items.HONEY_BOTTLE));
+        GameTestSeams.feed(player, new ItemStack(Items.HONEY_BOTTLE));
 
         if (!assertEffect(helper, player, MobEffects.NAUSEA, 0, "honey_bottle -> Nausea")) {
             return;
@@ -254,17 +250,11 @@ final class IAmZombieFoodInfGameTestBodies {
         ServerLevel level = helper.getLevel();
 
         Horse horse = helper.spawn(EntityTypes.HORSE, new BlockPos(1, 2, 1));
-        DamageSource killedByPlayer = level.damageSources().playerAttack(player);
-        horse.hurtServer(level, killedByPlayer, Float.MAX_VALUE);
+        GameTestSeams.killByPlayerAttack(level, player, horse);
 
-        helper.succeedWhen(() -> {
-            if (horse.isAlive() && !horse.isRemoved()) {
-                throw helper.assertionException("horse has not been converted yet");
-            }
-            if (helper.getEntities(EntityTypes.ZOMBIE_HORSE, new BlockPos(1, 2, 1), 1.5).isEmpty()) {
-                throw helper.assertionException("expected a ZombieHorse after the zombie player killed the horse");
-            }
-        });
+        GameTestSeams.awaitConverted(helper, horse, EntityTypes.ZOMBIE_HORSE,
+                "horse has not been converted yet",
+                "expected a ZombieHorse after the zombie player killed the horse");
     }
 
     // ---- helpers ----
@@ -287,14 +277,4 @@ final class IAmZombieFoodInfGameTestBodies {
         return true;
     }
 
-    /** Runs the real eat: start the use (fires the Start hook), then finish it (fires the Finish event). Copied from
-     * {@link IAmZombieGameTestBodies}'s proven {@code feed} so this domain's tests drive the exact same server seam. */
-    private static void feed(FakePlayer player, ItemStack food) {
-        player.setItemInHand(InteractionHand.MAIN_HAND, food);
-        player.startUsingItem(InteractionHand.MAIN_HAND);
-        // Mirror LivingEntity.completeUsingItem's middle step: this posts LivingEntityUseItemEvent.Finish to the
-        // game bus, which the mod's ZombieFoodEvents handler consumes.
-        EventHooks.onItemUseFinish(player, food.copy(), player.getUseItemRemainingTicks(), food.finishUsingItem(player.level(), player));
-        player.stopUsingItem();
-    }
 }

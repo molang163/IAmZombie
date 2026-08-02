@@ -1,16 +1,22 @@
 package dev.molang.iamzombieq.gametest;
 
+import java.util.List;
 import java.util.UUID;
 
 import dev.molang.iamzombieq.IAmZombieItems;
 import dev.molang.iamzombieq.rules.core.ZombieForm;
 import dev.molang.iamzombieq.rules.core.ZombieSize;
+import dev.molang.iamzombieq.rules.food.ZombieFoodRules;
 import dev.molang.iamzombieq.rules.mount.ZombieMountRules;
 import dev.molang.iamzombieq.state.IAmZombieAttachments;
 import dev.molang.iamzombieq.state.SpiderMountData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.animal.chicken.Chicken;
 import net.minecraft.world.entity.animal.equine.Horse;
@@ -19,23 +25,27 @@ import net.minecraft.world.entity.animal.equine.ZombieHorse;
 import net.minecraft.world.entity.monster.spider.Spider;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
+import net.neoforged.bus.api.EventPriority;
+import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.common.util.FakePlayer;
+import net.neoforged.neoforge.event.entity.EntityMountEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 
 /**
- * FakePlayer-driven bodies for the {@code iamzombieq} MOUNT GameTests (catalog &sect;2.12 MNT), registered by
- * {@link IAmZombieMountGameTests}.
+ * FakePlayer- and connected-ServerPlayer-driven bodies for the {@code iamzombieq} MOUNT GameTests (catalog
+ * &sect;2.12 MNT), registered by {@link IAmZombieMountGameTests}.
  *
  * <p><b>Interaction seam.</b> The mod's mount logic lives in {@code ZombieMountEvents.onEntityInteract}, a
  * {@code @SubscribeEvent} handler on the NeoForge game bus listening for {@link PlayerInteractEvent.EntityInteract}.
  * Because {@code FakePlayer.tick()} is a no-op, these tests drive that handler the same way vanilla does: they post a
  * real {@link PlayerInteractEvent.EntityInteract} to {@link NeoForge#EVENT_BUS} &mdash; the exact event vanilla's
  * {@code CommonHooks.onInteractEntity} fires from {@code ServerGamePacketListenerImpl}/{@code Player.interactOn}.
- * The mod is loaded in the gametest run, so its {@code @EventBusSubscriber} handler is on the bus and runs against
- * the spawned mount + FakePlayer with the real (uncancelled) event, exercising the production server-side code path
- * (food consumption, taming progress on the {@code SPIDER_MOUNT} attachment, undead-horse heal/auto-tame, refusal
- * cancellation). All effects asserted here are deterministic server-side state writes.
+ * Positive passenger tests instead call the connected player's real three-argument {@code interactOn}; this reaches
+ * the same handler and then vanilla's {@code startRiding} implementation. The mod is loaded in the GameTest run, so
+ * both paths exercise the production server-side code.
  *
  * <p>Batched tests share one level, so entity assertions and spawns use a tight radius / the test's own local origin
  * (which {@code padding} spaces well apart from neighbours).
@@ -152,7 +162,7 @@ final class IAmZombieMountGameTestBodies {
         player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(IAmZombieItems.SUPER_ROTTEN_FLESH.get(), 2));
         interact(player, spider);
 
-        float expected = Math.min(max, start + ZombieMountRules.spiderHealAmount("iamzombieq:super_rotten_flesh"));
+        float expected = Math.min(max, start + ZombieMountRules.spiderHealAmount(ZombieFoodRules.SUPER_ROTTEN_FLESH_ID));
         if (Math.abs(spider.getHealth() - expected) > 0.001F) {
             helper.fail("feeding super_rotten_flesh to an owned damaged spider should heal +10.0 (to "
                     + expected + "), was " + spider.getHealth());
@@ -316,6 +326,51 @@ final class IAmZombieMountGameTestBodies {
     // ---------------------------------------------------------------------------------------------------------------
 
     /**
+     * MNT-003 (positive): an empty-handed NORMAL/ADULT connected player rides its owned spider through the real
+     * three-argument interaction path. The mount event and both sides of the passenger relation must be established.
+     */
+    static void ownedSpiderRideAllowed(GameTestHelper helper) {
+        ServerPlayer player = null;
+        UUID playerId = null;
+        Spider spider = null;
+        MountObserver observer = null;
+        boolean observerRegistered = false;
+        try {
+            player = GameTestPlayers.spawnConnectedZombiePlayer(helper, ZombieForm.NORMAL, ZombieSize.ADULT);
+            playerId = player.getUUID();
+            spider = helper.spawn(EntityTypes.SPIDER, new BlockPos(1, 2, 1));
+            spider.setData(IAmZombieAttachments.SPIDER_MOUNT, SpiderMountData.ownedBy(playerId));
+            player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+
+            observer = new MountObserver(playerId, spider.getUUID());
+            NeoForge.EVENT_BUS.register(observer);
+            observerRegistered = true;
+
+            InteractionResult result = player.interactOn(spider, InteractionHand.MAIN_HAND, Vec3.ZERO);
+            helper.assertTrue(result == InteractionResult.SUCCESS_SERVER,
+                    "owned-spider interaction should return SUCCESS_SERVER");
+            assertMounted(helper, player, spider, observer, "owned spider");
+        } finally {
+            try {
+                if (observerRegistered) {
+                    NeoForge.EVENT_BUS.unregister(observer);
+                }
+            } finally {
+                try {
+                    if (spider != null) {
+                        spider.discard();
+                    }
+                } finally {
+                    if (playerId != null) {
+                        GameTestPlayers.disconnectConnectedPlayer(helper, playerId);
+                    }
+                }
+            }
+        }
+        helper.succeed();
+    }
+
+    /**
      * MNT-003 (negative): an empty-handed interact with an UNTAMED spider does not start a ride (the spider is not
      * owned, so {@code canMount(SPIDER, false)} is false). The player must not become a passenger.
      */
@@ -339,6 +394,50 @@ final class IAmZombieMountGameTestBodies {
     // ---------------------------------------------------------------------------------------------------------------
 
     /**
+     * MNT-011 (positive): an empty-handed NORMAL/BABY connected player rides a chicken through the production
+     * interaction and mount-event chain.
+     */
+    static void babyCanRideChicken(GameTestHelper helper) {
+        ServerPlayer player = null;
+        UUID playerId = null;
+        Chicken chicken = null;
+        MountObserver observer = null;
+        boolean observerRegistered = false;
+        try {
+            player = GameTestPlayers.spawnConnectedZombiePlayer(helper, ZombieForm.NORMAL, ZombieSize.BABY);
+            playerId = player.getUUID();
+            chicken = helper.spawn(EntityTypes.CHICKEN, new BlockPos(1, 2, 1));
+            player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+
+            observer = new MountObserver(playerId, chicken.getUUID());
+            NeoForge.EVENT_BUS.register(observer);
+            observerRegistered = true;
+
+            InteractionResult result = player.interactOn(chicken, InteractionHand.MAIN_HAND, Vec3.ZERO);
+            helper.assertTrue(result == InteractionResult.SUCCESS_SERVER,
+                    "baby-chicken interaction should return SUCCESS_SERVER");
+            assertMounted(helper, player, chicken, observer, "baby chicken");
+        } finally {
+            try {
+                if (observerRegistered) {
+                    NeoForge.EVENT_BUS.unregister(observer);
+                }
+            } finally {
+                try {
+                    if (chicken != null) {
+                        chicken.discard();
+                    }
+                } finally {
+                    if (playerId != null) {
+                        GameTestPlayers.disconnectConnectedPlayer(helper, playerId);
+                    }
+                }
+            }
+        }
+        helper.succeed();
+    }
+
+    /**
      * MNT-011 (negative): an ADULT zombie player interacting empty-handed with a Chicken must NOT mount it (the
      * chicken is a baby-only mount). The interact is still acknowledged (cancelled) but no ride happens.
      */
@@ -357,8 +456,72 @@ final class IAmZombieMountGameTestBodies {
     }
 
     // ---------------------------------------------------------------------------------------------------------------
+    // MNT-017: a horse killed by a zombie player converts to a zombie horse via the shared infection pipeline.
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * MNT-017 (A2 pipeline migration): killing a half-health Horse through the real damage pipeline
+     * ({@code hurtServer}, the same driving technique as the FixRegression nautilus conversion test) must convert
+     * it into a ZombieHorse via the shared infection pipeline in {@code ZombieInfectionEvents} &mdash; tamed,
+     * owned by the killing player, and with its health restored to the pre-death RATIO (0.5 of the zombie horse's
+     * max), proving the {@code recordPendingHorseHealthRatio} bridge + the migrated conversion work end-to-end.
+     * The HARD environment makes the infection roll deterministic (configured chance 1.0).
+     */
+    static void zombieHorseInfectionOnDeath(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        FakePlayer player = GameTestPlayers.spawnZombieFakePlayer(helper, ZombieForm.NORMAL, ZombieSize.ADULT);
+        BlockPos rel = new BlockPos(1, 2, 1);
+        Horse horse = helper.spawn(EntityTypes.HORSE, rel);
+        // Half health BEFORE the lethal hit: the LivingIncomingDamage snapshot must capture exactly ratio 0.5.
+        horse.setHealth(horse.getMaxHealth() * 0.5F);
+
+        GameTestSeams.killByPlayerAttack(level, player, horse);
+
+        helper.startSequence().thenExecuteAfter(2, () -> {
+            List<ZombieHorse> converted =
+                    level.getEntitiesOfClass(ZombieHorse.class, new AABB(helper.absolutePos(rel)).inflate(4.0));
+            if (converted.isEmpty()) {
+                helper.fail("horse was not converted to a zombie horse (HARD infection should be deterministic)");
+                return;
+            }
+            ZombieHorse zombieHorse = converted.get(0);
+            if (!zombieHorse.isTamed()) {
+                helper.fail("the converted zombie horse should be tamed for its new owner");
+                return;
+            }
+            UUID ownerUuid = zombieHorse.getOwnerReference() == null ? null : zombieHorse.getOwnerReference().getUUID();
+            if (!player.getUUID().equals(ownerUuid)) {
+                helper.fail("the converted zombie horse should be owned by the killing zombie player");
+                return;
+            }
+            float expected = Math.max(1.0F, zombieHorse.getMaxHealth() * 0.5F);
+            if (Math.abs(zombieHorse.getHealth() - expected) > 0.001F) {
+                helper.fail("the converted zombie horse should restore the pre-death health ratio (expected "
+                        + expected + ", was " + zombieHorse.getHealth() + ")");
+            }
+        }).thenSucceed();
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------------------------------------------
+
+    private static void assertMounted(
+            GameTestHelper helper,
+            ServerPlayer player,
+            Entity mount,
+            MountObserver observer,
+            String label) {
+        helper.assertTrue(observer.matchingMountEvents == 1,
+                label + " should publish exactly one matching EntityMountEvent, observed "
+                        + observer.matchingMountEvents);
+        helper.assertFalse(observer.lastMountCanceled,
+                label + " EntityMountEvent should be finally uncanceled at LOWEST priority");
+        helper.assertTrue(player.isPassenger(), label + " rider should report itself as a passenger");
+        helper.assertTrue(player.getVehicle() == mount, label + " rider should reference the expected vehicle");
+        helper.assertTrue(mount.getFirstPassenger() == player,
+                label + " mount should reference the player as its first passenger");
+    }
 
     /**
      * Posts the real {@link PlayerInteractEvent.EntityInteract} (MAIN_HAND) to {@link NeoForge#EVENT_BUS} &mdash; the
@@ -371,5 +534,29 @@ final class IAmZombieMountGameTestBodies {
                 new PlayerInteractEvent.EntityInteract(player, InteractionHand.MAIN_HAND, target);
         NeoForge.EVENT_BUS.post(event);
         return event;
+    }
+
+    private static final class MountObserver {
+        private final UUID riderId;
+        private final UUID mountId;
+        private int matchingMountEvents;
+        private boolean lastMountCanceled;
+
+        private MountObserver(UUID riderId, UUID mountId) {
+            this.riderId = riderId;
+            this.mountId = mountId;
+        }
+
+        @SubscribeEvent(priority = EventPriority.LOWEST, receiveCanceled = true)
+        public void onMount(EntityMountEvent event) {
+            Entity mounted = event.getEntityBeingMounted();
+            if (event.isMounting()
+                    && riderId.equals(event.getEntityMounting().getUUID())
+                    && mounted != null
+                    && mountId.equals(mounted.getUUID())) {
+                matchingMountEvents++;
+                lastMountCanceled = event.isCanceled();
+            }
+        }
     }
 }

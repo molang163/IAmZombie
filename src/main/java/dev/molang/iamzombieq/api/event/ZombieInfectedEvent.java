@@ -12,8 +12,8 @@ import org.jetbrains.annotations.NotNull;
  *
  * <p>Posted on the native {@code NeoForge.EVENT_BUS}; subscribe with {@code @SubscribeEvent}.
  *
- * <p>NOTE (Phase-1): fired by the infection handler AFTER each successful conversion, in both the villager and the
- * pig/piglin path.
+ * <p>NOTE (Phase-1): fired by the infection handler AFTER each successful conversion, in all four infection paths
+ * (villager, pig/piglin, horse, nautilus).
  *
  * <p>Part of the STABLE public API surface (semver 1.x).
  */

@@ -2,28 +2,26 @@ package dev.molang.iamzombieq.gameplay;
 import dev.molang.iamzombieq.rules.herobrine.HerobrineEncounter;
 import dev.molang.iamzombieq.rules.herobrine.HerobrineRules;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.molang.iamzombieq.util.SourceScan;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 
 class HerobrineEventsSourceTest {
-    private static final Path SOURCE = Path.of("src/main/java/dev/molang/iamzombieq/gameplay/HerobrineEvents.java");
+    private static final String SOURCE = "dev/molang/iamzombieq/gameplay/HerobrineEvents.java";
     private static final Path CONFIG = Path.of("src/main/java/dev/molang/iamzombieq/IAmZombieConfig.java");
     private static final Path ATTACHMENTS = Path.of("src/main/java/dev/molang/iamzombieq/state/IAmZombieAttachments.java");
     private static final Path ENCOUNTER_STATE = Path.of("src/main/java/dev/molang/iamzombieq/state/HerobrineEncounterState.java");
     private static final Path OMEN_SAVED_DATA = Path.of("src/main/java/dev/molang/iamzombieq/gameplay/OmenLightsSavedData.java");
 
-    private static String source() throws IOException {
-        return Files.readString(SOURCE);
-    }
-
     @Test
     void subscribesToTheCorrectServerEvents() throws IOException {
-        String source = source();
+        String source = SourceScan.mainJava(SOURCE);
         assertTrue(source.contains("@SubscribeEvent"), "the events class should subscribe to NeoForge events");
         assertTrue(source.contains("PlayerTickEvent.Post"), "the spawn/gaze driver should run on PlayerTickEvent.Post");
         assertTrue(source.contains("AttackEntityEvent"), "attacking Herobrine should be intercepted");
@@ -38,7 +36,7 @@ class HerobrineEventsSourceTest {
 
     @Test
     void broadensTriggersToProjectilesAndPotions() throws IOException {
-        String source = source();
+        String source = SourceScan.mainJava(SOURCE);
         assertTrue(source.contains("onProjectileImpact"), "a projectile-impact handler should exist");
         assertTrue(source.contains("getRayTraceResult"), "the projectile handler should inspect the ray trace result");
         assertTrue(source.contains("EntityHitResult"), "the projectile handler should resolve an EntityHitResult");
@@ -50,7 +48,7 @@ class HerobrineEventsSourceTest {
 
     @Test
     void armsTheGazeScanForAnySpawnViaEntityJoin() throws IOException {
-        String source = source();
+        String source = SourceScan.mainJava(SOURCE);
         assertTrue(source.contains("onEntityJoinLevel"), "any HerobrineEntity join should arm the gaze gate");
         assertTrue(source.contains("liveHerobrineCount++"), "the join handler should increment the live count");
         assertTrue(source.contains("liveHerobrineCount--"), "the leave handler should decrement the live count");
@@ -61,7 +59,7 @@ class HerobrineEventsSourceTest {
 
     @Test
     void performsRealDeathKeepInventoryAndRespawnInPlace() throws IOException {
-        String source = source();
+        String source = SourceScan.mainJava(SOURCE);
         assertTrue(source.contains("PENDING_RESPAWNS"), "real death should track pending respawns per UUID");
         assertTrue(source.contains("PENDING_RESPAWNS.put(player.getUUID()"), "a respawn snapshot should be recorded before the kill");
         assertTrue(source.contains("snapshotInventory"), "the full inventory should be deep-copied into the snapshot");
@@ -80,7 +78,7 @@ class HerobrineEventsSourceTest {
 
     @Test
     void mirrorsTheRespawnSnapshotIntoADurableServerOnlyAttachment() throws IOException {
-        String source = source();
+        String source = SourceScan.mainJava(SOURCE);
         // (a) The death path writes the durable attachment alongside the in-memory snapshot.
         assertTrue(source.contains("HEROBRINE_PENDING_RESPAWN"),
                 "the death path should mirror the snapshot into the durable attachment");
@@ -100,7 +98,7 @@ class HerobrineEventsSourceTest {
 
     @Test
     void keepsDreadDurableAcrossLogout() throws IOException {
-        String source = source();
+        String source = SourceScan.mainJava(SOURCE);
         // Dread is now a durable per-player attachment, so the old logout handler that removed the
         // in-memory encounter state is GONE — dread survives logout by design (veteran forever).
         assertFalse(source.contains("onPlayerLoggedOut"), "the logout handler should be removed (dread now persists)");
@@ -113,7 +111,15 @@ class HerobrineEventsSourceTest {
 
     @Test
     void preservesGazeAndCaveSpawnGating() throws IOException {
-        String source = source();
+        String source = SourceScan.mainJava(SOURCE);
+        String playerTick = SourceScan.compact(SourceScan.stripComments(
+                SourceScan.methodBody(source, "public static void onPlayerTick")));
+        assertTrue(playerTick.contains(
+                        "if(!(event.getEntity()instanceofServerPlayerplayer)"
+                                + "||!ZombiePlayerGates.isZombiePlayer(player)||!player.isAlive()){return;}"),
+                "the tick gate should preserve ServerPlayer, shared admission, and alive short-circuit order");
+        assertFalse(playerTick.contains(".isSpectator("),
+                "the tick gate should not duplicate the canonical spectator check");
         assertTrue(source.contains("HerobrineRules.isGazingAtHerobrine"), "gaze should reuse the pure gaze rule");
         assertTrue(source.contains("hasLineOfSight"), "gaze should require line of sight");
         assertTrue(source.contains("liveHerobrineCount"), "a live-count performance gate should exist");
@@ -122,24 +128,76 @@ class HerobrineEventsSourceTest {
     }
 
     @Test
+    void caveSpawnSearchUsesNamedParametersWithoutChangingRandomOrderOrBounds() throws IOException {
+        String source = SourceScan.mainJava(SOURCE);
+
+        String eligible = SourceScan.compact(SourceScan.stripComments(
+                SourceScan.methodBody(source, "private static boolean isEligibleCavePlayer")));
+        assertTrue(eligible.contains(
+                        "returnlevel.dimension()==Level.OVERWORLD"
+                                + "&&pos.getY()<level.getSeaLevel()-HerobrineRules.CAVE_SPAWN_SEA_LEVEL_OFFSET"
+                                + "&&!level.canSeeSky(pos)&&ZombiePlayerGates.isZombiePlayer(player);"),
+                "cave eligibility should preserve dimension, height, sky, and positive shared-admission order");
+        assertFalse(eligible.contains("!ZombiePlayerGates.isZombiePlayer(player)"),
+                "eligible cave players should use the shared gate with positive polarity");
+        assertFalse(eligible.contains(".isSpectator("),
+                "cave eligibility should not duplicate the canonical spectator check");
+        assertFalse(eligible.contains("level.getSeaLevel()-8"),
+                "cave eligibility must not fall back to the raw sea-level offset");
+
+        String find = SourceScan.methodBody(source, "private static Optional<BlockPos> findSpawnPosition");
+        String compactFind = SourceScan.compact(SourceScan.stripComments(find));
+        assertTrue(compactFind.contains(
+                "for(intattempt=0;attempt<HerobrineRules.CAVE_SPAWN_ATTEMPTS;attempt++)"));
+        assertTrue(compactFind.contains(
+                "intdistance=HerobrineRules.CAVE_SPAWN_HORIZONTAL_DISTANCE+player.getRandom().nextInt(HerobrineRules.CAVE_SPAWN_HORIZONTAL_DISTANCE)"));
+        assertTrue(compactFind.contains(
+                "intdy=player.getRandom().nextInt(HerobrineRules.CAVE_SPAWN_VERTICAL_OFFSET_RADIUS*2+1)-HerobrineRules.CAVE_SPAWN_VERTICAL_OFFSET_RADIUS"));
+        assertTrue(compactFind.contains(
+                "for(inty=-HerobrineRules.CAVE_SPAWN_VERTICAL_SEARCH_RADIUS;y<=HerobrineRules.CAVE_SPAWN_VERTICAL_SEARCH_RADIUS;y++)"));
+        assertFalse(compactFind.contains("for(intattempt=0;attempt<16;attempt++)"),
+                "spawn attempts must not fall back to the raw limit");
+        assertFalse(compactFind.contains("intdistance=12+player.getRandom().nextInt(12)"),
+                "horizontal distance must not fall back to raw bounds");
+        assertFalse(compactFind.contains("intdy=player.getRandom().nextInt(7)-3"),
+                "vertical offset must not fall back to raw bounds");
+        assertFalse(compactFind.contains("for(inty=-4;y<=4;y++)"),
+                "vertical search must not fall back to raw bounds");
+
+        assertEquals(3, SourceScan.countOccurrences(find, "player.getRandom()"),
+                "each position attempt should retain exactly three RNG calls");
+        int angleRoll = find.indexOf("player.getRandom().nextDouble()");
+        int distanceRoll = find.indexOf("player.getRandom().nextInt(HerobrineRules.CAVE_SPAWN_HORIZONTAL_DISTANCE)");
+        int verticalRoll = find.indexOf("player.getRandom().nextInt(HerobrineRules.CAVE_SPAWN_VERTICAL_OFFSET_RADIUS");
+        assertTrue(angleRoll >= 0 && angleRoll < distanceRoll && distanceRoll < verticalRoll,
+                "RNG order must stay angle, horizontal distance, then vertical offset");
+    }
+
+    @Test
     void maintainsThePerPlayerEscalationStateMachine() throws IOException {
-        String source = source();
+        String source = SourceScan.mainJava(SOURCE);
         assertTrue(source.contains("HEROBRINE_ENCOUNTER"), "per-player dread should live in the durable HEROBRINE_ENCOUNTER attachment");
         assertTrue(source.contains("HerobrineEncounterState"), "an encounter state class should track sightings/phase");
         assertTrue(source.contains("player.getData(IAmZombieAttachments.HEROBRINE_ENCOUNTER)"),
                 "the encounter state should be read from the player's attachment");
-        assertTrue(source.contains("HerobrineEncounter.phaseFor"), "phase should be computed via the pure phaseFor function");
-        assertTrue(source.contains("HerobrineEncounter.isLethal"), "lethality should be decided via the pure isLethal function");
-        assertTrue(source.contains("HerobrineEncounter.isOnLethalCooldown"), "lethal cooldown should be enforced");
-        assertTrue(source.contains("HerobrineEncounter.isSightingExpired"), "sighting memory decay should be enforced");
+        assertTrue(source.contains("HerobrineEncounter.resolveEncounter("),
+                "decay → phase → lethal/cooldown → cue should run through the single rules-layer resolveEncounter");
+        assertTrue(source.contains("HerobrineEncounter.phaseAfterDecay("),
+                "the read-only phase query should go through the pure phaseAfterDecay function");
+        assertTrue(source.contains("HerobrineEncounter.Snapshot("),
+                "the attachment state should be handed to the rules layer as a primitive snapshot");
+        assertTrue(source.contains("HerobrineEncounter.Action.LETHAL"),
+                "lethality should be decided by the resolution's action");
+        assertTrue(source.contains("resolution.nextSnapshot()"),
+                "the resolved next snapshot should be what gets persisted");
         assertTrue(source.contains("herobrine.discard()"), "non-lethal sightings should make Herobrine vanish");
-        assertTrue(source.contains("phaseTransitionCue"), "phase upgrades should emit a perceptible cue");
+        assertTrue(source.contains("resolution.cue()"), "phase upgrades should emit the cue carried by the resolution");
         assertTrue(source.contains("sendSystemMessage"), "phase upgrades should message the affected player");
     }
 
     @Test
     void drivesThePhaseScaledReversibleOmen() throws IOException {
-        String source = source();
+        String source = SourceScan.mainJava(SOURCE);
         assertTrue(source.contains("playOmen"), "spawning should trigger an omen");
         assertTrue(source.contains("omenIntensityFor"), "omen strength should scale with the encounter phase");
         assertTrue(source.contains("BlockStateProperties.LIT"), "the omen should extinguish lit blocks via blockstate (reversible)");
@@ -152,14 +210,14 @@ class HerobrineEventsSourceTest {
 
     @Test
     void playsTheLethalJoltStinger() throws IOException {
-        String source = source();
+        String source = SourceScan.mainJava(SOURCE);
         assertTrue(source.contains("HEROBRINE_JOLT_ENABLED"), "the jolt should be config-gated");
         assertTrue(source.contains("SoundEvents.WARDEN_ROAR"), "a vanilla stinger should play before the lethal kill");
     }
 
     @Test
     void cleansUpTransientStateOnServerStop() throws IOException {
-        String source = source();
+        String source = SourceScan.mainJava(SOURCE);
         // Dread + omen are now durable, so server stop must NOT clear them; only the transient
         // in-memory PENDING_RESPAWNS map and the live-count gate are reset.
         assertFalse(source.contains("ENCOUNTERS.clear()"), "server stop should no longer clear the (now-durable) dread state");
@@ -170,26 +228,39 @@ class HerobrineEventsSourceTest {
 
     @Test
     void persistsDreadAndOmenViaDurableStorage() throws IOException {
-        String source = source();
-        // Dread: read-mutate-re-set the per-player attachment so the change serializes onto player NBT.
+        String source = SourceScan.mainJava(SOURCE);
+        // Dread: read → resolve → re-set the per-player attachment so the change serializes onto player NBT.
         assertTrue(source.contains("player.getData(IAmZombieAttachments.HEROBRINE_ENCOUNTER)"),
                 "dread should be read from the durable per-player attachment");
-        assertTrue(source.contains("player.setData(IAmZombieAttachments.HEROBRINE_ENCOUNTER, state)"),
-                "the mutated dread state must be re-set so the change persists");
+        assertTrue(source.contains("player.setData(IAmZombieAttachments.HEROBRINE_ENCOUNTER, nextState)"),
+                "the resolved dread state must be re-set so the change persists");
         assertTrue(source.contains("event.getOriginal().getData(IAmZombieAttachments.HEROBRINE_ENCOUNTER)"),
                 "dread should be carried across the player's own death in onPlayerClone");
 
-        // The attachment is registered (server-only: no .sync, no .copyOnDeath) with a 4-field serializer.
+        // The attachment is registered (server-only: no .sync, no .copyOnDeath) with a 4-field serializer
+        // whose NBT keys must stay verbatim for old saves.
         String attachments = Files.readString(ATTACHMENTS);
         assertTrue(attachments.contains("HEROBRINE_ENCOUNTER"), "the dread attachment should be registered");
         assertTrue(attachments.contains("HerobrineEncounterStateSerializer"), "the dread attachment should have a serializer");
         assertTrue(attachments.contains("getLongOr") && attachments.contains("putLong"),
                 "the dread serializer should persist the long sighting/lethal ticks");
+        assertTrue(attachments.contains("\"sightings\"") && attachments.contains("\"lastSightingTick\"")
+                        && attachments.contains("\"lastLethalTick\"") && attachments.contains("\"escalatedBefore\""),
+                "the dread serializer must keep the four NBT keys verbatim (old-save compatibility)");
+        assertTrue(attachments.contains("builder(HerobrineEncounterState::new)"),
+                "the attachment default supplier should stay the no-arg constructor reference");
 
-        // The encounter-state holder exposes the four mutable dread fields + a copy constructor.
+        // The encounter-state holder is an immutable record with the four dread components + with* copies.
         String encounterState = Files.readString(ENCOUNTER_STATE);
+        assertTrue(encounterState.contains("record HerobrineEncounterState"), "the dread state should be an immutable record");
         assertTrue(encounterState.contains("int sightings"), "the dread state should hold the sightings count");
         assertTrue(encounterState.contains("boolean escalatedBefore"), "the dread state should hold the veteran flag");
+        assertTrue(encounterState.contains("this(0, Long.MIN_VALUE, -1L, false)"),
+                "the no-arg constructor must keep the legacy defaults for the attachment supplier");
+        assertTrue(encounterState.contains("withSightingsReset")
+                        && encounterState.contains("withSightingRecorded")
+                        && encounterState.contains("withLethalTriggered"),
+                "the record should expose the with* copy helpers");
 
         // Omen: a per-level codec-based SavedData, obtained via the level's data storage.
         assertTrue(source.contains("level.getDataStorage().computeIfAbsent(OmenLightsSavedData.TYPE)"),

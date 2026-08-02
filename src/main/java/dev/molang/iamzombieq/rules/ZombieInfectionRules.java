@@ -5,8 +5,18 @@ public final class ZombieInfectionRules {
     private ZombieInfectionRules() {
     }
 
+    /** The per-difficulty infection chance table (moved in from {@code ZombieBalanceRules}, R3). */
+    public static double infectionChance(GameDifficulty difficulty) {
+        return switch (difficulty) {
+            case PEACEFUL -> 0.0;
+            case EASY -> 0.25;
+            case NORMAL -> 0.50;
+            case HARD -> 1.0;
+        };
+    }
+
     public static boolean shouldInfect(GameDifficulty difficulty, double roll) {
-        double chance = ZombieBalanceRules.infectionChance(difficulty);
+        double chance = infectionChance(difficulty);
         return shouldInfect(chance, roll);
     }
 

@@ -78,4 +78,43 @@ public final class ZombieEvolutionRules {
     public static ZombieState giantStateAfterKill(ZombieState current) {
         return new ZombieState(ZombieForm.GIANT, ZombieSize.ADULT);
     }
+
+    /**
+     * Which one-time first-evolution reward (if any) a death-driven evolution should grant. Pure decision only:
+     * the event layer maps the returned kind to the actual item side effects (trident / husk desert bundle /
+     * enchanted golden sword), which stay in the event layer unchanged (A6). A reward is granted only when the
+     * outcome's matching "already received" flag is still unclaimed AND the resulting form matches the outcome,
+     * mirroring the guards previously inlined in the event layer.
+     */
+    public static FirstEvolutionReward resolveFirstEvolutionReward(
+            DeathOutcome outcome,
+            ZombieForm resultingForm,
+            boolean receivedFirstDrownedReward,
+            boolean receivedFirstHuskReward,
+            boolean receivedFirstZombifiedPiglinReward
+    ) {
+        return switch (outcome) {
+            case EVOLVE_TO_DROWNED ->
+                    (!receivedFirstDrownedReward && resultingForm == ZombieForm.DROWNED)
+                            ? FirstEvolutionReward.TRIDENT
+                            : FirstEvolutionReward.NONE;
+            case EVOLVE_TO_HUSK ->
+                    (!receivedFirstHuskReward && resultingForm == ZombieForm.HUSK)
+                            ? FirstEvolutionReward.HUSK_DESERT_BUNDLE
+                            : FirstEvolutionReward.NONE;
+            case EVOLVE_TO_ZOMBIFIED_PIGLIN ->
+                    (!receivedFirstZombifiedPiglinReward && resultingForm == ZombieForm.ZOMBIFIED_PIGLIN)
+                            ? FirstEvolutionReward.ENCHANTED_GOLD_SWORD
+                            : FirstEvolutionReward.NONE;
+            case EVOLVE_TO_BABY, ORDINARY_DEATH_RESET -> FirstEvolutionReward.NONE;
+        };
+    }
+
+    /** The kind of first-evolution reward a death-driven evolution grants (A6). {@code NONE} = no reward. */
+    public enum FirstEvolutionReward {
+        NONE,
+        TRIDENT,
+        HUSK_DESERT_BUNDLE,
+        ENCHANTED_GOLD_SWORD
+    }
 }

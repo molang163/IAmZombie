@@ -95,7 +95,11 @@ public class HerobrineEntity extends Monster {
 
     @Override
     public boolean canBeHitByProjectile() {
-        return false;
+        // Allow projectiles to register a hit so the ProjectileImpactEvent -> HerobrineEvents.onProjectileImpact
+        // ENCOUNTER path can fire (arrows/snowballs/tridents/thrown potions trigger a sighting). Herobrine still
+        // takes no damage: it is setInvulnerable(true) and hurtServer() above returns false. Returning false here
+        // filtered Herobrine out of every projectile hit-scan, leaving that encounter path dead (#5).
+        return true;
     }
 
     @Override

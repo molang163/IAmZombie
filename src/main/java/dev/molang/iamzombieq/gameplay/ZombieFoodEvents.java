@@ -1,27 +1,30 @@
 package dev.molang.iamzombieq.gameplay;
 
-import java.util.Locale;
 import java.util.Map;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
-import dev.molang.iamzombieq.IAmZombieConfig;
+import dev.molang.iamzombieq.IAmZombieServerConfig;
 import dev.molang.iamzombieq.api.event.ZombieAteEvent;
 import dev.molang.iamzombieq.api.event.ZombieEatPreEvent;
 import dev.molang.iamzombieq.api.extension.IFoodRuleProvider;
 import dev.molang.iamzombieq.api.extension.IZombieExtensions;
 import dev.molang.iamzombieq.internal.event.ZombieEventPublisher;
 import dev.molang.iamzombieq.rules.EffectSpec;
+import dev.molang.iamzombieq.rules.food.EffectId;
 import dev.molang.iamzombieq.rules.food.FoodRule;
 import dev.molang.iamzombieq.rules.food.ZombieFoodRules;
 import dev.molang.iamzombieq.rules.core.ZombieSize;
 import dev.molang.iamzombieq.state.IAmZombieAttachments;
 import dev.molang.iamzombieq.state.PlayerZombieData;
+import dev.molang.iamzombieq.util.ZombiePlayerGates;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.effect.MobEffect;
@@ -29,13 +32,16 @@ import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.food.FoodProperties;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.Consumable;
 import net.minecraft.world.level.block.CakeBlock;
 import net.minecraft.world.level.block.CandleCakeBlock;
+import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.common.ModConfigSpec;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.living.LivingEntityUseItemEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
@@ -112,6 +118,24 @@ public final class ZombieFoodEvents {
         if (!(clickedState.getBlock() instanceof CakeBlock) && !(clickedState.getBlock() instanceof CandleCakeBlock)) {
             return;
         }
+        // Only punish when vanilla actually EATS a cake slice — mirror CakeBlock/CandleCakeBlock's own eat conditions
+        // so we never punish a no-op interaction (#11). Getting this exact matters: a candle-in-hand click only PLACES
+        // a candle on a FRESH cake (BITES==0) — on a bitten cake it eats; a LIT candle-cake only EXTINGUISHES when an
+        // empty hand hits the candle (upper half) — a hit on the cake part still eats.
+        ItemStack heldItem = player.getItemInHand(event.getHand());
+        boolean vanillaEats;
+        if (clickedState.getBlock() instanceof CandleCakeBlock) {
+            boolean lighting = heldItem.is(Items.FLINT_AND_STEEL) || heldItem.is(Items.FIRE_CHARGE);
+            boolean extinguishing =
+                    heldItem.isEmpty() && clickedState.getValue(CandleCakeBlock.LIT) && hitCandlePart(event);
+            vanillaEats = !lighting && !extinguishing;
+        } else {
+            boolean placingCandle = heldItem.is(ItemTags.CANDLES) && clickedState.getValue(CakeBlock.BITES) == 0;
+            vanillaEats = !placingCandle;
+        }
+        if (!vanillaEats) {
+            return;
+        }
         // Vanilla CakeBlock.eat() refuses at a full hunger bar (canEat(false)); match it so we never punish a no-op click.
         if (!player.canEat(false)) {
             return;
@@ -125,11 +149,13 @@ public final class ZombieFoodEvents {
             return;
         }
 
-        FoodRule rule = ZombieFoodRules.ruleForStack(ItemStack.EMPTY, "minecraft:cake", configuredZombieFoods());
+        FoodRule rule = ZombieFoodRules.ruleForStack(
+                ItemStack.EMPTY, "minecraft:cake", configuredZombieFoods(),
+                ZombieFoodEvents::resolveEffect, ZombieFoodEvents::resolveConfig);
         ZombieFoodRules.HumanFoodPunishmentSettings punishmentSettings = ZombieFoodRules.humanFoodPunishmentSettings(
-                IAmZombieConfig.HUMAN_FOOD_NAUSEA_DURATION_TICKS.get(),
-                IAmZombieConfig.HUMAN_FOOD_HUNGER_DURATION_TICKS.get(),
-                IAmZombieConfig.HUMAN_FOOD_HUNGER_AMPLIFIER.get()
+                IAmZombieServerConfig.HUMAN_FOOD_NAUSEA_DURATION_TICKS.get(),
+                IAmZombieServerConfig.HUMAN_FOOD_HUNGER_DURATION_TICKS.get(),
+                IAmZombieServerConfig.HUMAN_FOOD_HUNGER_AMPLIFIER.get()
         );
         if (rule.appliesHumanFoodPunishment()) {
             applyHumanFoodPunishment(player, punishmentSettings);
@@ -139,6 +165,13 @@ public final class ZombieFoodEvents {
         }
         applyZombieEffects(player, rule, "minecraft:cake");
         // Intentionally NOT cancelled: vanilla CakeBlock#useWithoutItem still eats the slice as usual.
+    }
+
+    // Mirrors vanilla CandleCakeBlock.candleHit: the candle occupies the upper half of the block, so a hit above the
+    // block-local y=0.5 is a candle hit (which, with an empty hand on a LIT cake, extinguishes instead of eating).
+    private static boolean hitCandlePart(PlayerInteractEvent.RightClickBlock event) {
+        BlockHitResult hit = event.getHitVec();
+        return hit != null && hit.getLocation().y - hit.getBlockPos().getY() > 0.5;
     }
 
     @SubscribeEvent
@@ -198,9 +231,9 @@ public final class ZombieFoodEvents {
             return;
         }
         ZombieFoodRules.HumanFoodPunishmentSettings punishmentSettings = ZombieFoodRules.humanFoodPunishmentSettings(
-                IAmZombieConfig.HUMAN_FOOD_NAUSEA_DURATION_TICKS.get(),
-                IAmZombieConfig.HUMAN_FOOD_HUNGER_DURATION_TICKS.get(),
-                IAmZombieConfig.HUMAN_FOOD_HUNGER_AMPLIFIER.get()
+                IAmZombieServerConfig.HUMAN_FOOD_NAUSEA_DURATION_TICKS.get(),
+                IAmZombieServerConfig.HUMAN_FOOD_HUNGER_DURATION_TICKS.get(),
+                IAmZombieServerConfig.HUMAN_FOOD_HUNGER_AMPLIFIER.get()
         );
         if (player instanceof ServerPlayer serverPlayer) {
             if (eaten.is(Items.ROTTEN_FLESH)) {
@@ -259,25 +292,18 @@ public final class ZombieFoodEvents {
     // here so the special always-edible zombie foods (G1) still get their buff substitution + vanilla-side-effect
     // removal; the creative-vs-survival distinction is applied per-item via {@link #appliesFullZombieFoodRules}.
     private static boolean shouldProcessZombieFood(Player player) {
-        return !player.level().isClientSide() && !player.isSpectator();
+        return ZombiePlayerGates.isServerZombiePlayer(player);
     }
 
     // N6: the full zombie food rule set (including the human-food hunger/nausea debuff) now applies even in creative,
     // so being a zombie is consistent across game modes. Only spectators are excluded (already filtered upstream by
     // {@link #shouldProcessZombieFood}). Kept as a named predicate because the food handlers branch on it per item.
     private static boolean appliesFullZombieFoodRules(Player player) {
-        return !player.isSpectator();
+        return ZombiePlayerGates.isZombiePlayer(player);
     }
 
     private static boolean isFood(ItemStack stack) {
         return stack.has(DataComponents.FOOD);
-    }
-
-    private static Set<String> configuredZombieFoods() {
-        return IAmZombieConfig.ZOMBIE_FOODS.get()
-                .stream()
-                .map(value -> value.toLowerCase(Locale.ROOT))
-                .collect(Collectors.toUnmodifiableSet());
     }
 
     // ADDITIVE (Phase-1 API): the FOOD extension hook-query (design §5.b / PLAN A3). Addon-registered
@@ -294,7 +320,81 @@ public final class ZombieFoodEvents {
                 }
             }
         }
-        return ZombieFoodRules.ruleForStack(stack, itemId, configuredZombieFoods());
+        return ZombieFoodRules.ruleForStack(
+                stack, itemId, configuredZombieFoods(),
+                ZombieFoodEvents::resolveEffect, ZombieFoodEvents::resolveConfig);
+    }
+
+    /**
+     * Default effect resolver for the events layer: convert the rules-layer Minecraft-free {@link EffectId} (an effect
+     * registry-id string + duration + amplifier) into a live {@link EffectSpec} carrying the resolved
+     * {@code Holder<MobEffect>}. The explicit food table only ever names built-in vanilla effects, so an unresolvable
+     * id is a coding error in the table — it throws (rather than silently dropping the buff), and the gameplay-layer
+     * EffectId test resolves every table id through this to catch any typo at test time, not at runtime.
+     *
+     * <p>Public so the client-side food tooltip ({@code IAmZombieClient#onItemTooltip}) reuses the SAME resolver when
+     * it resolves a rule for display, so the two can never disagree on how an {@link EffectId} maps to a live effect.
+     */
+    public static EffectSpec resolveEffect(EffectId effectId) {
+        Holder<MobEffect> effect = BuiltInRegistries.MOB_EFFECT.get(Identifier.parse(effectId.effectId()))
+                .orElseThrow(() -> new IllegalArgumentException("Unknown mob effect id: " + effectId.effectId()));
+        return EffectSpec.of(effect, effectId.durationTicks(), effectId.amplifier());
+    }
+
+    /**
+     * Default config resolver for the events layer: map a rules-layer semantic key
+     * ({@code ZombieFoodRules.KEY_*}) to its configured {@link ModConfigSpec.IntValue} and read it. This is where the
+     * former {@code ZombieFoodRules.cfg(...)} fallback now lives (moved out so the rules class needs no config-holder
+     * import): read the configured value at call time, but if the config spec is not yet loaded (e.g. a plain unit test
+     * that never bootstraps the mod) fall back to the value's registered default. Behavior is byte-for-byte the old
+     * cfg(): {@code try value.get() catch (IllegalStateException) return value.getDefault()}. DEC-3-neutral — an
+     * unloaded config still silently returns the default and never throws.
+     *
+     * <p>Public for compatibility and server-side callers. The physical-client
+     * tooltip resolves the same semantic key from its READY remote19 payload
+     * instead of reading a local SERVER holder.
+     */
+    public static int resolveConfig(String key) {
+        return cfg(configValueFor(key));
+    }
+
+    private static Set<String> configuredZombieFoods() {
+        return IAmZombieServerConfig.ZOMBIE_FOODS.get().stream()
+                .map(value -> value.toLowerCase(Locale.ROOT))
+                .collect(Collectors.toUnmodifiableSet());
+    }
+
+    /** The moved-here twin of the old ZombieFoodRules.cfg(): configured value, or the registered default if unloaded. */
+    private static int cfg(ModConfigSpec.IntValue value) {
+        try {
+            return value.get();
+        } catch (IllegalStateException notLoaded) {
+            return value.getDefault();
+        }
+    }
+
+    /** Map each rules-layer semantic config key to its canonical SERVER IntValue. */
+    private static ModConfigSpec.IntValue configValueFor(String key) {
+        return switch (key) {
+            case ZombieFoodRules.KEY_SWEET_SLOWNESS_TICKS -> IAmZombieServerConfig.SWEET_SLOWNESS_DURATION_TICKS;
+            case ZombieFoodRules.KEY_SUPER_ROTTEN_FLESH_STRENGTH_TICKS -> IAmZombieServerConfig.SUPER_ROTTEN_FLESH_STRENGTH_DURATION_TICKS;
+            case ZombieFoodRules.KEY_SUPER_ROTTEN_FLESH_STRENGTH_AMPLIFIER -> IAmZombieServerConfig.SUPER_ROTTEN_FLESH_STRENGTH_AMPLIFIER;
+            case ZombieFoodRules.KEY_SUPER_ROTTEN_FLESH_SATURATION_TICKS -> IAmZombieServerConfig.SUPER_ROTTEN_FLESH_SATURATION_DURATION_TICKS;
+            case ZombieFoodRules.KEY_SPIDER_EYE_NIGHT_VISION_TICKS -> IAmZombieServerConfig.SPIDER_EYE_NIGHT_VISION_DURATION_TICKS;
+            case ZombieFoodRules.KEY_T1_CARRION_WATER_BREATHING_TICKS -> IAmZombieServerConfig.T1_CARRION_WATER_BREATHING_DURATION_TICKS;
+            case ZombieFoodRules.KEY_GOLDEN_APPLE_ABSORPTION_TICKS -> IAmZombieServerConfig.GOLDEN_APPLE_ABSORPTION_DURATION_TICKS;
+            case ZombieFoodRules.KEY_GOLDEN_APPLE_HUNGER_TICKS -> IAmZombieServerConfig.GOLDEN_APPLE_HUNGER_DURATION_TICKS;
+            case ZombieFoodRules.KEY_ENCHANTED_GOLDEN_APPLE_ABSORPTION_TICKS -> IAmZombieServerConfig.ENCHANTED_GOLDEN_APPLE_ABSORPTION_DURATION_TICKS;
+            case ZombieFoodRules.KEY_ENCHANTED_GOLDEN_APPLE_RESISTANCE_TICKS -> IAmZombieServerConfig.ENCHANTED_GOLDEN_APPLE_RESISTANCE_DURATION_TICKS;
+            case ZombieFoodRules.KEY_ENCHANTED_GOLDEN_APPLE_HUNGER_TICKS -> IAmZombieServerConfig.ENCHANTED_GOLDEN_APPLE_HUNGER_DURATION_TICKS;
+            case ZombieFoodRules.KEY_PUFFERFISH_ABSORPTION_TICKS -> IAmZombieServerConfig.PUFFERFISH_ABSORPTION_DURATION_TICKS;
+            case ZombieFoodRules.KEY_PUFFERFISH_REGENERATION_TICKS -> IAmZombieServerConfig.PUFFERFISH_REGENERATION_DURATION_TICKS;
+            case ZombieFoodRules.KEY_PUFFERFISH_REGENERATION_AMPLIFIER -> IAmZombieServerConfig.PUFFERFISH_REGENERATION_AMPLIFIER;
+            case ZombieFoodRules.KEY_CHORUS_SLOW_FALLING_TICKS -> IAmZombieServerConfig.CHORUS_SLOW_FALLING_DURATION_TICKS;
+            case ZombieFoodRules.KEY_CHORUS_NAUSEA_TICKS -> IAmZombieServerConfig.CHORUS_NAUSEA_DURATION_TICKS;
+            case ZombieFoodRules.KEY_HONEY_NAUSEA_TICKS -> IAmZombieServerConfig.HONEY_NAUSEA_DURATION_TICKS;
+            default -> throw new IllegalArgumentException("Unknown zombie-food config key: " + key);
+        };
     }
 
     private static String itemId(ItemStack stack) {
@@ -354,13 +454,12 @@ public final class ZombieFoodEvents {
             PlayerZombieData data = player.getData(IAmZombieAttachments.PLAYER_ZOMBIE);
             if (data.state().size() == ZombieSize.BABY) {
                 player.setData(IAmZombieAttachments.PLAYER_ZOMBIE, data.withState(data.state().asAdult()));
-                player.syncData(IAmZombieAttachments.PLAYER_ZOMBIE);
             }
         }
     }
 
     private static void applyRandomSmallPositive(Player player) {
-        int dur = IAmZombieConfig.POISONOUS_POTATO_POSITIVE_DURATION_TICKS.get();
+        int dur = IAmZombieServerConfig.POISONOUS_POTATO_POSITIVE_DURATION_TICKS.get();
         int pick = player.getRandom().nextInt(3);
         Holder<MobEffect> effect = switch (pick) {
             case 0 -> MobEffects.SPEED;

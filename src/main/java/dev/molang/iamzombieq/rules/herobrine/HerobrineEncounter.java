@@ -173,6 +173,90 @@ public final class HerobrineEncounter {
         };
     }
 
+    /**
+     * Immutable snapshot of a player's dread state — mirrors the four fields of
+     * {@code HerobrineEncounterState} (state layer) using only primitives so the whole encounter
+     * decision can run and be unit tested without any Minecraft runtime.
+     */
+    public record Snapshot(int sightings, long lastSightingTick, long lastLethalTick, boolean escalatedBefore) {
+    }
+
+    /** What the event layer should do after resolving one gaze/attack/projectile encounter. */
+    public enum Action {
+        /** Non-lethal sighting: Herobrine vanishes; the sighting is already recorded in the next snapshot. */
+        CONTINUE,
+        /** The lethal encounter: run the real encounter death; the next snapshot marks the veteran. */
+        LETHAL
+    }
+
+    /**
+     * Full outcome of {@link #resolveEncounter}: the snapshot to persist, the side effect to run,
+     * the phase the player is in once this resolution is applied (for {@link Action#CONTINUE} the
+     * phase including the just-recorded sighting; for {@link Action#LETHAL} always
+     * {@link Phase#LETHAL}), and the perceptible upgrade cue ({@code null} when no cue should
+     * fire — always {@code null} for {@link Action#LETHAL}).
+     */
+    public record Resolution(Snapshot nextSnapshot, Action action, Phase phase, TransitionCue cue) {
+    }
+
+    /**
+     * Read-only phase query: the phase the player would be in after memory decay, WITHOUT
+     * recording a new sighting. Single source of truth for "what phase is this player in right
+     * now" (e.g. scaling spawn omens / the client heartbeat) — it never advances the arc.
+     *
+     * <p>Deliberately does not report the decayed count back for write-out: decay is persisted
+     * only by {@link #resolveEncounter}, keeping this a pure query (matching the historical
+     * read-only {@code currentPhase} semantics in the event layer).
+     */
+    public static Phase phaseAfterDecay(Snapshot snapshot, long now, int escalationSightings,
+                                        int lethalSightings, long memoryWindow) {
+        return phaseFor(decayedSightings(snapshot, now, memoryWindow), snapshot.escalatedBefore(),
+                escalationSightings, lethalSightings);
+    }
+
+    /**
+     * Single entry point resolving one encounter, migrated verbatim from the event layer:
+     * memory decay → phase → lethal + cooldown decision → (non-lethal only) record the sighting
+     * and derive the phase-upgrade cue.
+     *
+     * <ul>
+     *   <li>{@link Action#LETHAL}: sightings are NOT incremented; {@code lastLethalTick = now};
+     *       {@code escalatedBefore = true} (veteran forever); {@code lastSightingTick} unchanged;
+     *       no cue.</li>
+     *   <li>{@link Action#CONTINUE}: decayed sightings + 1; {@code lastSightingTick = now};
+     *       lethal fields unchanged; cue = upgrade cue between the pre- and post-recording phases
+     *       (may be {@code null}).</li>
+     * </ul>
+     */
+    public static Resolution resolveEncounter(Snapshot snapshot, long now, int escalationSightings,
+                                              int lethalSightings, long memoryWindow, long lethalCooldown) {
+        // Memory decay: a sighting that aged out of the window resets the accumulated sightings,
+        // but NOT escalatedBefore — once Herobrine has killed you it stays lethal to you (a veteran
+        // is marked for good), matching the documented "veteran immediately lethal again" rule.
+        int sightings = decayedSightings(snapshot, now, memoryWindow);
+        Phase before = phaseAfterDecay(snapshot, now, escalationSightings, lethalSightings, memoryWindow);
+
+        boolean lethal = isLethal(before) && !isOnLethalCooldown(now, snapshot.lastLethalTick(), lethalCooldown);
+        if (lethal) {
+            Snapshot next = new Snapshot(sightings, snapshot.lastSightingTick(), now, true);
+            return new Resolution(next, Action.LETHAL, before, null);
+        }
+
+        // Non-lethal sighting: record it and report any phase upgrade as a cue.
+        int recorded = sightings + 1;
+        Phase after = phaseFor(recorded, snapshot.escalatedBefore(), escalationSightings, lethalSightings);
+        Snapshot next = new Snapshot(recorded, now, snapshot.lastLethalTick(), snapshot.escalatedBefore());
+        return new Resolution(next, Action.CONTINUE, after, phaseTransitionCue(before, after));
+    }
+
+    /** Sightings after applying memory decay (shared by the phase query and the full resolution). */
+    private static int decayedSightings(Snapshot snapshot, long now, long memoryWindow) {
+        if (snapshot.sightings() > 0 && isSightingExpired(now, snapshot.lastSightingTick(), memoryWindow)) {
+            return 0;
+        }
+        return snapshot.sightings();
+    }
+
     /** Phase-scaled omen instructions; all fields are pre-cap suggestions for the event layer. */
     public record OmenIntensity(int litBlocks, int footsteps, int durationTicks) {
     }

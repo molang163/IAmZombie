@@ -1,10 +1,13 @@
 package dev.molang.iamzombieq.rules;
 import dev.molang.iamzombieq.rules.core.ZombieForm;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.molang.iamzombieq.rules.ZombieMobTargetingRules.MobKind;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import org.junit.jupiter.api.Test;
 
 class ZombieMobTargetingRulesTest {
@@ -106,6 +109,35 @@ class ZombieMobTargetingRulesTest {
                 "the axolotl ignores a husk-form player");
         assertFalse(ZombieMobTargetingRules.shouldIgnore(MobKind.AXOLOTL, ZombieForm.DROWNED, false, false),
                 "the axolotl hunts a drowned-form player");
+    }
+
+    @Test
+    void publicEntriesAndTargetingOverrideRecordShapeStayCompatible() throws NoSuchMethodException {
+        Method legacy = ZombieMobTargetingRules.class.getMethod(
+                "shouldIgnore",
+                MobKind.class,
+                ZombieForm.class,
+                boolean.class,
+                boolean.class);
+        Method typed = ZombieMobTargetingRules.class.getMethod(
+                "shouldIgnore",
+                MobKind.class,
+                ZombieForm.class,
+                TargetingOverrides.class);
+
+        for (Method entry : new Method[] {legacy, typed}) {
+            assertEquals(boolean.class, entry.getReturnType());
+            assertTrue(Modifier.isPublic(entry.getModifiers()));
+            assertTrue(Modifier.isStatic(entry.getModifiers()));
+        }
+
+        assertTrue(TargetingOverrides.class.isRecord());
+        var components = TargetingOverrides.class.getRecordComponents();
+        assertEquals(2, components.length);
+        assertEquals("retaliating", components[0].getName());
+        assertEquals(boolean.class, components[0].getType());
+        assertEquals("angeredNeutral", components[1].getName());
+        assertEquals(boolean.class, components[1].getType());
     }
 
     // N9 (drowned trident friendly-fire) takes Minecraft LivingEntity args and is covered by the live handler;

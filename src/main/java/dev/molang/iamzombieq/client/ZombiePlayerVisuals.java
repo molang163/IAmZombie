@@ -16,6 +16,10 @@ import net.minecraft.client.model.HumanoidModel;
 import net.minecraft.client.model.geom.EntityModelSet;
 import net.minecraft.client.model.geom.ModelLayerLocation;
 import net.minecraft.client.model.geom.ModelLayers;
+import net.minecraft.client.model.geom.ModelPart;
+import net.minecraft.client.model.geom.PartPose;
+import net.minecraft.client.model.monster.piglin.AdultZombifiedPiglinModel;
+import net.minecraft.client.model.monster.piglin.BabyZombifiedPiglinModel;
 import net.minecraft.client.model.monster.zombie.BabyDrownedModel;
 import net.minecraft.client.model.monster.zombie.BabyZombieModel;
 import net.minecraft.client.model.monster.zombie.DrownedModel;
@@ -30,11 +34,11 @@ import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.client.renderer.entity.layers.EquipmentLayerRenderer;
 import net.minecraft.client.renderer.entity.layers.HumanoidArmorLayer;
 import net.minecraft.client.renderer.entity.layers.ItemInHandLayer;
-import net.minecraft.client.renderer.entity.player.AvatarRenderer;
 import net.minecraft.client.renderer.entity.state.AvatarRenderState;
 import net.minecraft.client.renderer.entity.state.ZombieRenderState;
 import net.minecraft.client.renderer.item.ItemStackRenderState;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.ClientAsset;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
@@ -47,10 +51,12 @@ import net.minecraft.world.entity.player.PlayerSkin;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.client.event.RenderPlayerEvent;
 import net.neoforged.neoforge.client.event.RenderArmEvent;
+import org.joml.Quaternionf;
+import org.joml.Vector3f;
 
 public final class ZombiePlayerVisuals {
+    private static final float POSITIVE_Y_NORMAL_THRESHOLD = 0.999F;
     private static MonsterModels monsterModels;
-    private static boolean renderingFirstPersonArm;
     private static final Map<UUID, CachedSkin> SKIN_CACHE = new HashMap<>();
 
     private ZombiePlayerVisuals() {
@@ -131,31 +137,103 @@ public final class ZombiePlayerVisuals {
         event.setCanceled(true);
     }
 
-    @SuppressWarnings("deprecation")
-    public static void renderFirstPersonArm(RenderArmEvent event) {
-        if (renderingFirstPersonArm) {
-            return;
-        }
+    public static void renderFirstPersonArm(RenderArmEvent<?> event) {
         if (!ZombieRenderRules.usesMonsterTexture(IAmZombieClientConfig.FIRST_PERSON_ARM_SKIN_MODE.get())
-                || !shouldUseZombieVisuals(event.getPlayer())) {
+                || !(event.getAvatar() instanceof AbstractClientPlayer player)
+                || !shouldUseZombieVisuals(player)) {
             return;
         }
 
-        Identifier texture = textureFor(event.getPlayer().getData(IAmZombieAttachments.PLAYER_ZOMBIE));
-        AvatarRenderer<AbstractClientPlayer> renderer = Minecraft.getInstance()
-                .getEntityRenderDispatcher()
-                .getPlayerRenderer(event.getPlayer());
-        renderingFirstPersonArm = true;
+        PlayerZombieData data = player.getData(IAmZombieAttachments.PLAYER_ZOMBIE);
+        ZombieForm form = data.state().form();
+        boolean baby = data.state().size() == ZombieSize.BABY;
+        HumanoidArm armSide = event.getArm();
+        HumanoidModel<?> monsterModel = models().firstPersonModelFor(form, baby);
+        ModelPart arm = monsterModel.getArm(armSide);
+        Identifier texture = firstPersonTextureFor(form, baby);
+
+        arm.resetPose();
+        arm.visible = true;
+        arm.skipDraw = false;
+        arm.zRot = armSide == HumanoidArm.RIGHT ? 0.1F : -0.1F;
+        Vector3f offset = firstPersonArmOffset(event.getArmPart(), monsterModel.root(), arm, armSide);
+        PoseStack poseStack = event.getPoseStack();
+        poseStack.pushPose();
         try {
-            if (event.getArm() == HumanoidArm.RIGHT) {
-                renderer.renderRightHand(event.getPoseStack(), event.getSubmitNodeCollector(), event.getPackedLight(), texture, false);
-            } else {
-                renderer.renderLeftHand(event.getPoseStack(), event.getSubmitNodeCollector(), event.getPackedLight(), texture, false);
-            }
+            poseStack.translate(offset.x(), offset.y(), offset.z());
+            applyPartPose(poseStack, monsterModel.root().getInitialPose());
+            event.getSubmitNodeCollector().submitModelPart(
+                    arm,
+                    poseStack,
+                    RenderTypes.entityTranslucent(texture),
+                    event.getLightCoords(),
+                    OverlayTexture.NO_OVERLAY,
+                    null
+            );
         } finally {
-            renderingFirstPersonArm = false;
+            poseStack.popPose();
         }
         event.setCanceled(true);
+    }
+
+    static Vector3f firstPersonArmOffset(
+            ModelPart playerArm,
+            ModelPart monsterRoot,
+            ModelPart monsterArm,
+            HumanoidArm armSide
+    ) {
+        float roll = armSide == HumanoidArm.RIGHT ? 0.1F : -0.1F;
+        Vector3f playerTip = firstPersonArmTip(playerArm, PartPose.ZERO, roll);
+        Vector3f monsterTip = firstPersonArmTip(monsterArm, monsterRoot.getInitialPose(), roll);
+        return playerTip.sub(monsterTip);
+    }
+
+    static Vector3f firstPersonArmTip(ModelPart arm, PartPose rootPose, float roll) {
+        PoseStack poseStack = new PoseStack();
+        applyPartPose(poseStack, rootPose);
+        PartPose initial = arm.getInitialPose();
+        applyPartPose(poseStack, new PartPose(
+                initial.x(), initial.y(), initial.z(),
+                initial.xRot(), initial.yRot(), roll,
+                initial.xScale(), initial.yScale(), initial.zScale()
+        ));
+        return poseStack.last().pose().transformPosition(positiveYTipCenter(arm), new Vector3f());
+    }
+
+    static void applyPartPose(PoseStack poseStack, PartPose pose) {
+        poseStack.translate(pose.x() / 16.0F, pose.y() / 16.0F, pose.z() / 16.0F);
+        if (pose.xRot() != 0.0F || pose.yRot() != 0.0F || pose.zRot() != 0.0F) {
+            poseStack.mulPose(new Quaternionf().rotationZYX(pose.zRot(), pose.yRot(), pose.xRot()));
+        }
+        if (pose.xScale() != 1.0F || pose.yScale() != 1.0F || pose.zScale() != 1.0F) {
+            poseStack.scale(pose.xScale(), pose.yScale(), pose.zScale());
+        }
+    }
+
+    private static Vector3f positiveYTipCenter(ModelPart arm) {
+        Vector3f[] farthest = {null};
+        arm.visit(new PoseStack(), (ignoredPose, path, ignoredCubeIndex, cube) -> {
+            if (!path.isEmpty()) {
+                return;
+            }
+            for (ModelPart.Polygon polygon : cube.polygons) {
+                if (polygon.normal().y() <= POSITIVE_Y_NORMAL_THRESHOLD) {
+                    continue;
+                }
+                Vector3f center = new Vector3f();
+                for (ModelPart.Vertex vertex : polygon.vertices()) {
+                    center.add(vertex.worldX(), vertex.worldY(), vertex.worldZ());
+                }
+                center.div(polygon.vertices().length);
+                if (farthest[0] == null || center.y() > farthest[0].y()) {
+                    farthest[0] = center;
+                }
+            }
+        });
+        if (farthest[0] == null) {
+            throw new IllegalStateException("First-person arm has no own-cube +Y face");
+        }
+        return farthest[0];
     }
 
     static boolean shouldUseZombieVisuals(Player player) {
@@ -192,10 +270,6 @@ public final class ZombiePlayerVisuals {
         SKIN_CACHE.clear();
     }
 
-    private static Identifier textureFor(PlayerZombieData data) {
-        return textureFor(data.state().form(), data.state().size() == ZombieSize.BABY);
-    }
-
     private static Identifier textureFor(ZombieForm form, boolean baby) {
         if (baby) {
             return switch (form) {
@@ -206,6 +280,13 @@ public final class ZombiePlayerVisuals {
             };
         }
         return Identifier.parse(ZombieRenderRules.monsterTexturePath(form));
+    }
+
+    private static Identifier firstPersonTextureFor(ZombieForm form, boolean baby) {
+        if (baby && form == ZombieForm.ZOMBIFIED_PIGLIN) {
+            return Identifier.withDefaultNamespace("textures/entity/piglin/zombified_piglin_baby.png");
+        }
+        return textureFor(form, baby);
     }
 
     private static MonsterModels models() {
@@ -224,6 +305,8 @@ public final class ZombiePlayerVisuals {
                 new BabyDrownedModel(entityModels.bakeLayer(ModelLayers.DROWNED_BABY)),
                 new ZombieModel<>(entityModels.bakeLayer(ModelLayers.HUSK)),
                 new BabyZombieModel<>(entityModels.bakeLayer(ModelLayers.HUSK_BABY)),
+                new AdultZombifiedPiglinModel(entityModels.bakeLayer(ModelLayers.ZOMBIFIED_PIGLIN)),
+                new BabyZombifiedPiglinModel(entityModels.bakeLayer(ModelLayers.ZOMBIFIED_PIGLIN_BABY)),
                 layerSet(ModelLayers.ZOMBIE_ARMOR, ModelLayers.ZOMBIE_BABY_ARMOR, entityModels, equipmentRenderer),
                 layerSet(ModelLayers.DROWNED_ARMOR, ModelLayers.DROWNED_BABY_ARMOR, entityModels, equipmentRenderer),
                 layerSet(ModelLayers.HUSK_ARMOR, ModelLayers.HUSK_BABY_ARMOR, entityModels, equipmentRenderer)
@@ -384,10 +467,21 @@ public final class ZombiePlayerVisuals {
             BabyDrownedModel babyDrowned,
             ZombieModel<ZombieRenderState> husk,
             BabyZombieModel<ZombieRenderState> babyHusk,
+            AdultZombifiedPiglinModel zombifiedPiglin,
+            BabyZombifiedPiglinModel babyZombifiedPiglin,
             MonsterLayerSet normalLayers,
             MonsterLayerSet drownedLayers,
             MonsterLayerSet huskLayers
     ) {
+        HumanoidModel<?> firstPersonModelFor(ZombieForm form, boolean baby) {
+            return switch (form) {
+                case NORMAL, GIANT -> baby ? babyNormal : normal;
+                case DROWNED -> baby ? babyDrowned : drowned;
+                case HUSK -> baby ? babyHusk : husk;
+                case ZOMBIFIED_PIGLIN -> baby ? babyZombifiedPiglin : zombifiedPiglin;
+            };
+        }
+
         EntityModel<? super ZombieRenderState> modelFor(ZombieForm form, boolean baby) {
             if (baby) {
                 return switch (form) {

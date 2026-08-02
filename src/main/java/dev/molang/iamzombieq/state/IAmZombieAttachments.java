@@ -246,10 +246,10 @@ public final class IAmZombieAttachments {
 
         @Override
         public boolean write(HerobrineEncounterState attachment, ValueOutput output) {
-            output.putInt("sightings", attachment.sightings);
-            output.putLong("lastSightingTick", attachment.lastSightingTick);
-            output.putLong("lastLethalTick", attachment.lastLethalTick);
-            output.putBoolean("escalatedBefore", attachment.escalatedBefore);
+            output.putInt("sightings", attachment.sightings());
+            output.putLong("lastSightingTick", attachment.lastSightingTick());
+            output.putLong("lastLethalTick", attachment.lastLethalTick());
+            output.putBoolean("escalatedBefore", attachment.escalatedBefore());
             return true;
         }
     }

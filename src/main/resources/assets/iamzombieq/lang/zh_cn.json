@@ -56,11 +56,8 @@
   "iamzombieq.message.mount.spider_taming": "蜘蛛对你放下了戒心……（%s%%）",
   "iamzombieq.message.mount.spider_tamed": "蜘蛛驯服成功，现在可以骑乘了",
   "iamzombieq.message.peaceful_unsupported": "僵尸不会出现在和平模式。",
-  "iamzombieq.message.peaceful_warning": "僵尸不会出现在和平模式",
   "iamzombieq.message.peaceful_rejected": "僵尸怎么能出现在和平模式呢？",
-  "iamzombieq.tooltip.food.zombie": "僵尸能吃",
   "iamzombieq.tooltip.food.special": "诡异……且有代价",
-  "iamzombieq.tooltip.food.human": "吃了八成难受",
   "iamzombieq.tooltip.food.carrion": "腐鲜·盛宴",
   "iamzombieq.tooltip.food.forage": "能吃，平平无奇",
   "iamzombieq.tooltip.food.human_cooked": "人类熟食·令人作呕"

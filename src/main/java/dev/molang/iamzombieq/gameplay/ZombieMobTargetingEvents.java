@@ -1,15 +1,18 @@
 package dev.molang.iamzombieq.gameplay;
 
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Predicate;
 
-import dev.molang.iamzombieq.IAmZombieConfig;
-import dev.molang.iamzombieq.rules.DisguiseRules;
+import dev.molang.iamzombieq.IAmZombieServerConfig;
+import dev.molang.iamzombieq.rules.TargetingOverrides;
+import dev.molang.iamzombieq.rules.VillagerFearRules;
 import dev.molang.iamzombieq.rules.core.ZombieForm;
 import dev.molang.iamzombieq.rules.ZombieMobTargetingRules;
 import dev.molang.iamzombieq.state.IAmZombieAttachments;
 import dev.molang.iamzombieq.state.PlayerZombieData;
+import dev.molang.iamzombieq.util.BoundedUuidMap;
+import dev.molang.iamzombieq.util.ZombiePlayerGates;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
@@ -19,14 +22,17 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.NeutralMob;
+import net.minecraft.world.entity.ai.goal.AvoidEntityGoal;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.animal.axolotl.Axolotl;
 import net.minecraft.world.entity.monster.zombie.Drowned;
 import net.minecraft.world.entity.npc.villager.AbstractVillager;
+import net.minecraft.world.entity.npc.wanderingtrader.WanderingTrader;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.living.LivingChangeTargetEvent;
 import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
@@ -86,12 +92,7 @@ public final class ZombieMobTargetingEvents {
     // (mirrors the ZombieMountEvents bounded-LinkedHashMap idiom).
     private static final int CONVERSION_GRACE_CAP = 256;
     private static final Map<UUID, ConversionGrace> CONVERSION_GRACE =
-            new LinkedHashMap<>(16, 0.75F, false) {
-                @Override
-                protected boolean removeEldestEntry(Map.Entry<UUID, ConversionGrace> eldest) {
-                    return size() > CONVERSION_GRACE_CAP;
-                }
-            };
+            BoundedUuidMap.newBounded(CONVERSION_GRACE_CAP);
 
     // ~10 ticks (0.5s). Long enough to cover the same-swing sweep (seeded the SAME tick as conversion) plus the
     // 1-2 tick latency before the kin's HurtByTargetGoal fires its setTarget; short enough to expire before the
@@ -113,12 +114,7 @@ public final class ZombieMobTargetingEvents {
     // logout/stop. Server-thread-only, exactly like CONVERSION_GRACE above.
     private static final int GRUDGE_CAP = 256;
     private static final Map<UUID, Grudge> PLAYER_GRUDGE =
-            new LinkedHashMap<>(16, 0.75F, false) {
-                @Override
-                protected boolean removeEldestEntry(Map.Entry<UUID, Grudge> eldest) {
-                    return size() > GRUDGE_CAP;
-                }
-            };
+            BoundedUuidMap.newBounded(GRUDGE_CAP);
 
     // FORGIVE-TAIL length (ticks): how long a grudge OUTLIVES the mob's goal still targeting the player. The grudge
     // self-refreshes every tick the goal re-asserts setTarget(player) (see the RECORD/REFRESH block in onChangeTarget),
@@ -173,19 +169,18 @@ public final class ZombieMobTargetingEvents {
         // N9: a Drowned's thrown trident can clip another Drowned; do not let drowned start fighting each other
         // from that friendly fire. Genuine melee retaliation (the target is this mob's last attacker) is kept.
         boolean drownedRetaliating = mob.getLastHurtByMob() == newTarget;
-        if (ZombieMobTargetingRules.isInterDrownedFriendlyFire(mob, newTarget, drownedRetaliating)) {
+        if (ZombieMobTargetingAdapter.isInterDrownedFriendlyFire(mob, newTarget, drownedRetaliating)) {
             event.setNewAboutToBeSetTarget(null);
             return;
         }
 
-        if (!IAmZombieConfig.UNDEAD_IGNORE_ZOMBIE_PLAYER.get()) {
+        if (!(mob.level() instanceof ServerLevel serverLevel)) {
+            return;
+        }
+        if (!IAmZombieServerConfig.UNDEAD_IGNORE_ZOMBIE_PLAYER.get()) {
             return;
         }
         if (!(newTarget instanceof Player player) || !isZombiePlayer(player)) {
-            return;
-        }
-
-        if (!(mob.level() instanceof ServerLevel serverLevel)) {
             return;
         }
 
@@ -247,7 +242,12 @@ public final class ZombieMobTargetingEvents {
         boolean angeredNeutral = mob instanceof NeutralMob neutral && neutral.isAngryAt(player, serverLevel);
 
         PlayerZombieData data = player.getData(IAmZombieAttachments.PLAYER_ZOMBIE);
-        if (ZombieMobTargetingRules.shouldIgnoreZombiePlayer(mob, player, data, retaliating, angeredNeutral)) {
+        if (ZombieMobTargetingAdapter.shouldIgnoreZombiePlayer(
+                mob,
+                player,
+                data,
+                new TargetingOverrides(retaliating, angeredNeutral)
+        )) {
             event.setNewAboutToBeSetTarget(null);
         }
     }
@@ -264,8 +264,8 @@ public final class ZombieMobTargetingEvents {
      */
     @SubscribeEvent
     public static void seedAttackersOntoZombiePlayer(PlayerTickEvent.Post event) {
-        if (!IAmZombieConfig.UNDEAD_IGNORE_ZOMBIE_PLAYER.get()
-                || !(event.getEntity() instanceof ServerPlayer player)
+        if (!(event.getEntity() instanceof ServerPlayer player)
+                || !IAmZombieServerConfig.UNDEAD_IGNORE_ZOMBIE_PLAYER.get()
                 || !isZombiePlayer(player)
                 || player.tickCount % ATTACKER_SEED_INTERVAL_TICKS != 0
                 || !(player.level() instanceof ServerLevel level)) {
@@ -287,7 +287,7 @@ public final class ZombieMobTargetingEvents {
         if (!mob.isAlive() || mob.getTarget() != null) {
             return false;
         }
-        ZombieMobTargetingRules.MobKind kind = ZombieMobTargetingRules.classify(mob);
+        ZombieMobTargetingRules.MobKind kind = ZombieMobTargetingAdapter.classify(mob);
         return ZombieMobTargetingRules.needsActiveSeeding(kind)
                 && ZombieMobTargetingRules.attacksZombiePlayer(kind, form);
     }
@@ -320,9 +320,42 @@ public final class ZombieMobTargetingEvents {
 
         AABB area = zombie.getBoundingBox().inflate(DROWNED_RALLY_RADIUS);
         for (Drowned ally : level.getEntitiesOfClass(Drowned.class, area,
-                ally -> ZombieMobTargetingRules.shouldRallyToAttackDrowned(ally, offender))) {
+                ally -> ZombieMobTargetingAdapter.shouldRallyToAttackDrowned(ally, offender))) {
             ally.setTarget(offender);
         }
+    }
+
+    /** Marker subclass: vanilla traders already carry priority-1 AvoidEntityGoal instances (Zombie/Evoker/...),
+     *  so idempotency on re-join (dimension change, chunk reload) must key on THIS exact goal type (DEC-5). */
+    private static final class AvoidZombiePlayerGoal extends AvoidEntityGoal<Player> {
+        AvoidZombiePlayerGoal(WanderingTrader trader, Predicate<LivingEntity> predicate) {
+            super(trader, Player.class, predicate, (float) VillagerFearRules.FLEE_DISTANCE,
+                    VillagerFearRules.FLEE_WALK_SPEED, VillagerFearRules.FLEE_SPRINT_SPEED, living -> true);
+        }
+    }
+
+    /**
+     * Bug #3 (wandering traders), moved from the deleted WanderingTrader mixin (DEC-5): a wandering trader
+     * avoids hostile ENTITIES (Zombie, Evoker, ...) via goal-based {@code AvoidEntityGoal}, but a zombie PLAYER is
+     * not a Zombie entity so nothing fires. Append an {@link AvoidZombiePlayerGoal} that flees an undisguised
+     * zombie player at {@link VillagerFearRules#FLEE_DISTANCE} blocks (mirroring the vanilla anti-zombie avoid);
+     * disguised / spectator players are excluded by the predicate. Idempotent via the marker-subclass check above.
+     */
+    @SubscribeEvent
+    public static void onWanderingTraderJoinLevel(EntityJoinLevelEvent event) {
+        if (event.getLevel().isClientSide() || !(event.getEntity() instanceof WanderingTrader trader)) {
+            return;
+        }
+        if (trader.goalSelector.getAvailableGoals().stream()
+                .anyMatch(wrapped -> wrapped.getGoal() instanceof AvoidZombiePlayerGoal)) {
+            return; // already injected on a previous join
+        }
+        Predicate<LivingEntity> isUndisguisedZombiePlayer = entity -> entity instanceof ServerPlayer player
+                && VillagerFearRules.shouldFleeFromZombiePlayer(
+                        ZombiePlayerGates.isZombiePlayer(player),
+                        ZombieMobTargetingAdapter.isDisguisedAsHuman(player.getItemBySlot(EquipmentSlot.HEAD)));
+        trader.goalSelector.addGoal(VillagerFearRules.AVOID_ZOMBIE_PLAYER_GOAL_PRIORITY,
+                new AvoidZombiePlayerGoal(trader, isUndisguisedZombiePlayer));
     }
 
     /**
@@ -344,7 +377,7 @@ public final class ZombieMobTargetingEvents {
         if (!isZombiePlayer(player)) {
             return;
         }
-        if (DisguiseRules.isDisguisedAsHuman(player.getItemBySlot(EquipmentSlot.HEAD))) {
+        if (ZombieMobTargetingAdapter.isDisguisedAsHuman(player.getItemBySlot(EquipmentSlot.HEAD))) {
             return;
         }
 
@@ -364,7 +397,7 @@ public final class ZombieMobTargetingEvents {
             return;
         }
         ItemStack head = player.getItemBySlot(EquipmentSlot.HEAD);
-        if (!DisguiseRules.isDisguisedAsHuman(head) || !head.isDamageableItem()) {
+        if (!ZombieMobTargetingAdapter.isDisguisedAsHuman(head) || !head.isDamageableItem()) {
             return;
         }
         // hurtAndBreak no-ops off-server and fires the proper head-slot break hook; spend exactly one point.
@@ -391,6 +424,36 @@ public final class ZombieMobTargetingEvents {
     private static boolean isZombiePlayer(Player player) {
         // N6: creative zombie players are still zombies for targeting purposes, so undead/monsters ignore them
         // too. Only spectators (non-interacting) are excluded.
-        return !player.isSpectator();
+        return ZombiePlayerGates.isZombiePlayer(player);
+    }
+
+    /**
+     * Fix A (piglin/NeutralMob group-anger swarm) support: true iff -- absent retaliation/anger -- {@link
+     * #onChangeTarget} WOULD cancel {@code mob} targeting {@code target} because it is an ignored zombie player.
+     * Vanilla's group-anger alert ({@code HurtByTargetGoal#alertOther}) sets the alerted kin's target to the player
+     * with NO persistent anger, so at that instant the deny-list sees {@code isAngryAt==false} and cancels the
+     * target before vanilla can promote it to anger (a deadlock -> the pack never swarms). The mixin on the alert
+     * source calls this to pre-anger exactly the neutral kin the deny-list would otherwise strand. Mirrors
+     * onChangeTarget's own preconditions; passing {@code (false, false)} models the alert-time state (the kin was not
+     * hit and is not yet angry), so it returns true only for a kin the deny-list would strand -- e.g. a ZombifiedPiglin
+     * (IGNORED), but NOT an iron golem (a table attacker that keeps its target anyway). Server-only.
+     */
+    public static boolean wouldDenyZombiePlayerTarget(LivingEntity mob, LivingEntity target) {
+        if (!(mob.level() instanceof ServerLevel)) {
+            return false;
+        }
+        if (!IAmZombieServerConfig.UNDEAD_IGNORE_ZOMBIE_PLAYER.get()) {
+            return false;
+        }
+        if (!(target instanceof Player player) || !isZombiePlayer(player)) {
+            return false;
+        }
+        PlayerZombieData data = player.getData(IAmZombieAttachments.PLAYER_ZOMBIE);
+        return ZombieMobTargetingAdapter.shouldIgnoreZombiePlayer(
+                mob,
+                player,
+                data,
+                new TargetingOverrides(false, false)
+        );
     }
 }

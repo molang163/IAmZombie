@@ -2,6 +2,7 @@ package dev.molang.iamzombieq.rules;
 import dev.molang.iamzombieq.rules.mount.MountKind;
 import dev.molang.iamzombieq.rules.mount.ZombieMountRules;
 import dev.molang.iamzombieq.rules.core.ZombieSize;
+import dev.molang.iamzombieq.util.SourceScan;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -31,6 +32,14 @@ class ZombieMountRulesTest {
     void otherMountsUseVanillaRules() {
         assertTrue(ZombieMountRules.canMount(true, MountKind.OTHER, false));
         assertTrue(ZombieMountRules.canMount(false, MountKind.NORMAL_HORSE, false));
+    }
+
+    @Test
+    void zombiePlayersOfEitherSizeCanRideStridersThroughBothEntries() {
+        assertTrue(ZombieMountRules.canMount(true, ZombieSize.ADULT, MountKind.STRIDER, false));
+        assertTrue(ZombieMountRules.canMount(true, ZombieSize.BABY, MountKind.STRIDER, false));
+        assertTrue(ZombieMountRules.canMount(true, MountKind.STRIDER, false),
+                "the compatibility entry defaults to an adult rider and must preserve strider access");
     }
 
     @Test
@@ -76,6 +85,14 @@ class ZombieMountRulesTest {
         assertEquals(6.0F, ZombieMountRules.spiderHealAmount("minecraft:spider_eye"));
         assertEquals(10.0F, ZombieMountRules.spiderHealAmount("iamzombieq:super_rotten_flesh"));
         assertEquals(0.0F, ZombieMountRules.spiderHealAmount("minecraft:wheat"));
+    }
+
+    @Test
+    void zombieHorseHealingUsesOriginalFoodAmounts() {
+        assertEquals(4.0F, ZombieMountRules.zombieHorseHealAmount("minecraft:rotten_flesh"));
+        assertEquals(10.0F, ZombieMountRules.zombieHorseHealAmount("iamzombieq:super_rotten_flesh"));
+        assertEquals(0.0F, ZombieMountRules.zombieHorseHealAmount("minecraft:spider_eye"));
+        assertEquals(0.0F, ZombieMountRules.zombieHorseHealAmount("minecraft:wheat"));
     }
 
     @Test
@@ -173,7 +190,7 @@ class ZombieMountRulesTest {
         // its motion server-side (that desyncs on a dedicated server). No mount-flow file may call
         // setDeltaMovement/move(MoverType...) and the old ad-hoc driveMount must be gone.
         for (Path p : new Path[] {EVENTS, MOB_MIXIN, LIVING_MIXIN, RIDE_HELPER}) {
-            String code = stripComments(Files.readString(p));
+            String code = SourceScan.stripComments(Files.readString(p));
             assertFalse(code.contains("setDeltaMovement"),
                     p + " must not steer a ridden mount with server-only setDeltaMovement");
             assertFalse(code.contains(".move(MoverType"),
@@ -188,10 +205,18 @@ class ZombieMountRulesTest {
         String mob = Files.readString(MOB_MIXIN);
         // MobMixin makes the baby-player rider the controlling passenger so the client emits vehicle-move
         // packets. After the Tier-3 refactor the per-mount classification lives in MountCapability and the
-        // mixin delegates to it (activeRider for the controlling passenger).
+        // mixin delegates to it (activeRider for the controlling passenger). The despawn backstop moved to
+        // the MobDespawnEvent handler in ZombieMountEvents (DEC-6), so this remains the movement injection.
         assertTrue(mob.contains("getControllingPassenger"), "MobMixin must hook getControllingPassenger");
         assertTrue(mob.contains("MountCapability.activeRider"),
                 "MobMixin must report the controlling rider via the MountCapability registry");
+        assertFalse(mob.contains("removeWhenFarAway"),
+                "MobMixin must no longer inject removeWhenFarAway (backstop moved to MobDespawnEvent)");
+        String eventsWiring = Files.readString(EVENTS);
+        assertTrue(eventsWiring.contains("MobDespawnEvent")
+                        && eventsWiring.contains("MobDespawnEvent.Result.DENY")
+                        && eventsWiring.contains("MountCapability.activeFor"),
+                "ZombieMountEvents must DENY despawn for actively-serving mod mounts via MobDespawnEvent");
 
         // The chicken + big-zombie capabilities (and their valid-rider predicates) must exist in the registry.
         String capability = Files.readString(Path.of("src/main/java/dev/molang/iamzombieq/util/MountCapability.java"));
@@ -244,18 +269,11 @@ class ZombieMountRulesTest {
     @Test
     void rideHelperReturnsRawInputWithoutYawRotationToAvoidDoubleRotation() throws IOException {
         String helper = Files.readString(RIDE_HELPER);
-        String input = helper.substring(helper.indexOf("public static Vec3 riddenInput"),
-                helper.indexOf("}", helper.indexOf("public static Vec3 riddenInput")));
+        String input = SourceScan.methodBody(helper, "public static Vec3 riddenInput");
         // AbstractHorse-style raw input: strafe x0.5, backward x0.25, no sin/cos yaw rotation (travel rotates).
         assertTrue(input.contains("xxa * 0.5F"), "strafe must be halved like AbstractHorse");
         assertTrue(input.contains("0.25F"), "backward must be quartered like AbstractHorse");
         assertFalse(input.contains("sin") || input.contains("cos"),
                 "riddenInput must NOT pre-rotate by yaw; the mount's travel() applies rotation (no double-rotation)");
-    }
-
-    private static String stripComments(String code) {
-        return code
-                .replaceAll("(?s)/\\*.*?\\*/", "")
-                .replaceAll("(?m)//.*$", "");
     }
 }

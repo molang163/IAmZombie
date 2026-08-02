@@ -2,6 +2,7 @@ package dev.molang.iamzombieq.gameplay;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.molang.iamzombieq.util.SourceScan;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,7 +19,7 @@ class CoffinLootTableDataTest {
 
     @Test
     void coffinDropsOnlyFromTheHeadHalf() throws IOException {
-        String json = compact(Files.readString(LOOT_TABLE));
+        String json = SourceScan.compact(Files.readString(LOOT_TABLE));
 
         assertTrue(json.contains("\"condition\":\"minecraft:block_state_property\""),
                 "the coffin drop should be gated by a block_state_property condition");
@@ -28,9 +29,5 @@ class CoffinLootTableDataTest {
                 "the coffin drop should only fire for the head half so a 2-half coffin drops exactly one");
         assertTrue(json.contains("\"condition\":\"minecraft:survives_explosion\""),
                 "the pool-level survives_explosion condition must be preserved");
-    }
-
-    private static String compact(String json) {
-        return json.replaceAll("\\s+", "");
     }
 }

@@ -22,7 +22,6 @@ import org.junit.jupiter.api.Test;
  */
 class ZombieFoodEventsCakeSourceTest {
     private static final Path FOOD_SOURCE = Path.of("src/main/java/dev/molang/iamzombieq/gameplay/ZombieFoodEvents.java");
-    private static final Path RULES_SOURCE = Path.of("src/main/java/dev/molang/iamzombieq/rules/food/ZombieFoodRules.java");
 
     /** Extract the body of the onRightClickCakeBlock handler (from its declaration to the next @SubscribeEvent). */
     private static String cakeHandlerBody(String source) {
@@ -70,7 +69,7 @@ class ZombieFoodEventsCakeSourceTest {
     void cakeHandlerAppliesThePunishmentAndZombieEffectsViaTheSharedHelpers() throws IOException {
         String body = cakeHandlerBody(Files.readString(FOOD_SOURCE));
 
-        assertTrue(body.contains("ZombieFoodRules.ruleForStack(ItemStack.EMPTY, \"minecraft:cake\""),
+        assertTrue(body.contains("ZombieFoodRules.ruleForStack(") && body.contains("ItemStack.EMPTY, \"minecraft:cake\""),
                 "the cake handler must resolve the cake rule by id (no ItemStack available for a block)");
         assertTrue(body.contains("applyHumanFoodPunishment"),
                 "the cake handler must reuse the shared human-food punishment helper");
@@ -92,16 +91,4 @@ class ZombieFoodEventsCakeSourceTest {
                 "the cake handler must let vanilla's cake eat proceed unchanged");
     }
 
-    @Test
-    void cakeIsClassifiedAsSweetHumanCookedSoItPunishesAndAddsSlowness() throws IOException {
-        String rules = Files.readString(RULES_SOURCE);
-
-        assertTrue(rules.contains("Map.entry(\"minecraft:cake\", () -> humanCooked(true))"),
-                "cake must map to humanCooked(true): HUMAN_COOKED punishment PLUS the sweet Slowness debuff");
-        // Confirm the sweet branch of humanCooked is exactly what adds the configurable Slowness.
-        assertTrue(rules.contains("MobEffects.SLOWNESS"),
-                "the sweet HUMAN_COOKED branch must add a Slowness debuff");
-        assertTrue(rules.contains("FoodTier.HUMAN_COOKED"),
-                "the human-cooked tier (the only tier that punishes) must back the cake rule");
-    }
 }

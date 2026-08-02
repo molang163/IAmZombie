@@ -9,15 +9,16 @@ import org.jetbrains.annotations.NotNull;
 
 /**
  * Cancellable event fired BEFORE a zombie player infects/transforms another entity (design §5.a), e.g. a villager
- * -&gt; zombie villager or a pig/piglin -&gt; zombified piglin conversion. Cancel it to veto the infection.
+ * -&gt; zombie villager, a pig/piglin -&gt; zombified piglin, a horse -&gt; zombie horse, or a nautilus -&gt; zombie
+ * nautilus conversion. Cancel it to veto the infection.
  *
  * <p>Posted on the native {@code NeoForge.EVENT_BUS}; subscribe with {@code @SubscribeEvent}. The {@code attacker}
  * and {@code victim} are live entity references — treat them as read-only within the listener. {@code resultType}
  * is the entity type the victim is converting into.
  *
  * <p>NOTE (Phase-1): fired by the infection handler AFTER the existing infection gates (RNG chance +
- * {@code EventHooks.canLivingConvert}) but BEFORE the conversion, in both the villager and the pig/piglin path;
- * cancelling it aborts that infection.
+ * {@code EventHooks.canLivingConvert}) but BEFORE the conversion, in all four infection paths (villager,
+ * pig/piglin, horse, nautilus); cancelling it aborts that infection.
  *
  * <p>Part of the STABLE public API surface (semver 1.x).
  */

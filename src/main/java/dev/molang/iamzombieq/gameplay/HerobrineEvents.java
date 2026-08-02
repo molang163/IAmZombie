@@ -1,9 +1,11 @@
 package dev.molang.iamzombieq.gameplay;
 import dev.molang.iamzombieq.util.ModIds;
+import dev.molang.iamzombieq.util.ZombiePlayerGates;
 
-import dev.molang.iamzombieq.IAmZombieConfig;
+import dev.molang.iamzombieq.IAmZombieServerConfig;
 import dev.molang.iamzombieq.IAmZombieEntities;
 import dev.molang.iamzombieq.entity.HerobrineEntity;
+import dev.molang.iamzombieq.internal.logging.ZombieLog;
 import dev.molang.iamzombieq.rules.herobrine.HerobrineEncounter;
 import dev.molang.iamzombieq.rules.herobrine.HerobrineRules;
 import dev.molang.iamzombieq.state.HerobrineEncounterState;
@@ -84,7 +86,9 @@ public final class HerobrineEvents {
 
     @SubscribeEvent
     public static void onPlayerTick(PlayerTickEvent.Post event) {
-        if (!(event.getEntity() instanceof ServerPlayer player) || player.isSpectator() || !player.isAlive()) {
+        if (!(event.getEntity() instanceof ServerPlayer player)
+                || !ZombiePlayerGates.isZombiePlayer(player)
+                || !player.isAlive()) {
             return;
         }
 
@@ -159,11 +163,14 @@ public final class HerobrineEvents {
         // Carry the per-player dread state across the player's OWN death so "veteran forever"
         // (escalatedBefore) and accumulated sightings/timings survive the respawn. The attachment is
         // not .copyOnDeath(), so read it off the original (dead) player and re-set it on the new one,
-        // matching the PLAYER_ZOMBIE/HEROBRINE_PENDING_RESPAWN manual-carry pattern.
+        // matching the PLAYER_ZOMBIE/HEROBRINE_PENDING_RESPAWN manual-carry pattern. The state is an
+        // immutable record, so the same instance can be shared with the new player directly.
         HerobrineEncounterState carried = event.getOriginal().getData(IAmZombieAttachments.HEROBRINE_ENCOUNTER);
-        newPlayer.setData(IAmZombieAttachments.HEROBRINE_ENCOUNTER, new HerobrineEncounterState(
-                carried.sightings, carried.lastSightingTick, carried.lastLethalTick, carried.escalatedBefore));
+        newPlayer.setData(IAmZombieAttachments.HEROBRINE_ENCOUNTER, carried);
         PendingRespawn pending = PENDING_RESPAWNS.get(newPlayer.getUUID());
+        // C2: captured once, right after the in-memory lookup, so it is effectively final for the log lambda below
+        // regardless of which branch `pending` itself later takes.
+        boolean restoredFromDurableAttachment = pending == null;
         if (pending == null) {
             // Fallback: the in-memory map was cleared by a server stop while the player was at the
             // death screen. The durable attachment rode along on the ORIGINAL (dead) player's NBT, so
@@ -180,6 +187,8 @@ public final class HerobrineEvents {
         }
         restoreInventory(newPlayer, pending);
         restoreExperience(newPlayer, pending);
+        ZombieLog.debug(() -> "state.herobrine_restore uuid=" + newPlayer.getUUID()
+                + " source=" + (restoredFromDurableAttachment ? "durable_attachment" : "memory"));
     }
 
     @SubscribeEvent
@@ -283,46 +292,37 @@ public final class HerobrineEvents {
         }
 
         long now = level.getGameTime();
-        int escalationSightings = IAmZombieConfig.HEROBRINE_ESCALATION_SIGHTINGS.get();
-        int lethalSightings = IAmZombieConfig.HEROBRINE_LETHAL_SIGHTINGS.get();
-        long memoryWindow = IAmZombieConfig.HEROBRINE_MEMORY_WINDOW_TICKS.get();
-        long lethalCooldown = IAmZombieConfig.HEROBRINE_LETHAL_COOLDOWN_TICKS.get();
+        int escalationSightings = IAmZombieServerConfig.HEROBRINE_ESCALATION_SIGHTINGS.get();
+        int lethalSightings = IAmZombieServerConfig.HEROBRINE_LETHAL_SIGHTINGS.get();
+        long memoryWindow = IAmZombieServerConfig.HEROBRINE_MEMORY_WINDOW_TICKS.get();
+        long lethalCooldown = IAmZombieServerConfig.HEROBRINE_LETHAL_COOLDOWN_TICKS.get();
 
         HerobrineEncounterState state = player.getData(IAmZombieAttachments.HEROBRINE_ENCOUNTER);
-        // Memory decay: a sighting that aged out of the window resets the accumulated sightings,
-        // but NOT escalatedBefore — once Herobrine has killed you it stays lethal to you (a veteran
-        // is marked for good), matching the documented "veteran immediately lethal again" rule.
-        if (state.sightings > 0 && HerobrineEncounter.isSightingExpired(now, state.lastSightingTick, memoryWindow)) {
-            state.sightings = 0;
-        }
+        // Single rules-layer entry point: memory decay → phase → lethal/cooldown decision → cue.
+        // The arc semantics (decay never clears escalatedBefore — veteran forever; a lethal hit
+        // records no sighting; a non-lethal one increments) live in HerobrineEncounter.
+        HerobrineEncounter.Resolution resolution = HerobrineEncounter.resolveEncounter(
+                new HerobrineEncounter.Snapshot(
+                        state.sightings(), state.lastSightingTick(), state.lastLethalTick(), state.escalatedBefore()),
+                now, escalationSightings, lethalSightings, memoryWindow, lethalCooldown);
 
-        HerobrineEncounter.Phase phase =
-                HerobrineEncounter.phaseFor(state.sightings, state.escalatedBefore, escalationSightings, lethalSightings);
+        HerobrineEncounter.Snapshot next = resolution.nextSnapshot();
+        HerobrineEncounterState nextState = new HerobrineEncounterState(
+                next.sightings(), next.lastSightingTick(), next.lastLethalTick(), next.escalatedBefore());
 
-        boolean lethal = HerobrineEncounter.isLethal(phase)
-                && !HerobrineEncounter.isOnLethalCooldown(now, state.lastLethalTick, lethalCooldown);
-
-        if (lethal) {
+        if (resolution.action() == HerobrineEncounter.Action.LETHAL) {
             triggerEncounterDeath(player, herobrine);
-            state.lastLethalTick = now;
-            state.escalatedBefore = true;
-            // Re-set the mutated attachment so the change is persisted (the attachment stores a
-            // reference, but setData marks the holder dirty for serialization).
-            player.setData(IAmZombieAttachments.HEROBRINE_ENCOUNTER, state);
+            // Persist the resolved state (lastLethalTick = now, escalatedBefore = true, no new
+            // sighting recorded) — setData marks the holder dirty for serialization.
+            player.setData(IAmZombieAttachments.HEROBRINE_ENCOUNTER, nextState);
             return;
         }
 
-        // Non-lethal sighting: record it, vanish, and announce any phase upgrade.
-        HerobrineEncounter.Phase before = phase;
-        state.sightings++;
-        state.lastSightingTick = now;
-        // Re-set the mutated attachment so the change is persisted (see lethal branch above).
-        player.setData(IAmZombieAttachments.HEROBRINE_ENCOUNTER, state);
-        HerobrineEncounter.Phase after =
-                HerobrineEncounter.phaseFor(state.sightings, state.escalatedBefore, escalationSightings, lethalSightings);
+        // Non-lethal sighting: persist the recorded sighting, vanish, and announce any phase upgrade.
+        player.setData(IAmZombieAttachments.HEROBRINE_ENCOUNTER, nextState);
         herobrine.discard();
 
-        HerobrineEncounter.TransitionCue cue = HerobrineEncounter.phaseTransitionCue(before, after);
+        HerobrineEncounter.TransitionCue cue = resolution.cue();
         if (cue != null) {
             // Deliver to the action-bar overlay (overlay = true) so the "threat is escalating"
             // cue is always visible — overlay messages bypass chat-visibility HIDDEN, unlike a
@@ -332,7 +332,7 @@ public final class HerobrineEvents {
     }
 
     private static void maybeSpawnNear(ServerPlayer player, ServerLevel level) {
-        int interval = IAmZombieConfig.HEROBRINE_CAVE_CHECK_INTERVAL_TICKS.get();
+        int interval = IAmZombieServerConfig.HEROBRINE_CAVE_CHECK_INTERVAL_TICKS.get();
         if (interval <= 0 || player.tickCount % interval != 0) {
             return;
         }
@@ -345,7 +345,7 @@ public final class HerobrineEvents {
         ).isEmpty();
         if (!HerobrineRules.shouldAttemptCaveSpawn(
                 player.getRandom().nextDouble(),
-                IAmZombieConfig.HEROBRINE_CAVE_SPAWN_CHANCE.get(),
+                IAmZombieServerConfig.HEROBRINE_CAVE_SPAWN_CHANCE.get(),
                 playerInCave,
                 noNearbyHerobrine
         )) {
@@ -358,20 +358,23 @@ public final class HerobrineEvents {
     private static boolean isEligibleCavePlayer(ServerPlayer player, ServerLevel level) {
         BlockPos pos = player.blockPosition();
         return level.dimension() == Level.OVERWORLD
-                && pos.getY() < level.getSeaLevel() - 8
+                && pos.getY() < level.getSeaLevel() - HerobrineRules.CAVE_SPAWN_SEA_LEVEL_OFFSET
                 && !level.canSeeSky(pos)
-                && !player.isSpectator();
+                && ZombiePlayerGates.isZombiePlayer(player);
     }
 
     private static Optional<BlockPos> findSpawnPosition(ServerPlayer player, ServerLevel level) {
-        for (int attempt = 0; attempt < 16; attempt++) {
+        for (int attempt = 0; attempt < HerobrineRules.CAVE_SPAWN_ATTEMPTS; attempt++) {
             double angle = player.getRandom().nextDouble() * Math.PI * 2.0;
-            int distance = 12 + player.getRandom().nextInt(12);
+            int distance = HerobrineRules.CAVE_SPAWN_HORIZONTAL_DISTANCE
+                    + player.getRandom().nextInt(HerobrineRules.CAVE_SPAWN_HORIZONTAL_DISTANCE);
             int dx = (int) Math.round(Math.cos(angle) * distance);
             int dz = (int) Math.round(Math.sin(angle) * distance);
-            int dy = player.getRandom().nextInt(7) - 3;
+            int dy = player.getRandom().nextInt(HerobrineRules.CAVE_SPAWN_VERTICAL_OFFSET_RADIUS * 2 + 1)
+                    - HerobrineRules.CAVE_SPAWN_VERTICAL_OFFSET_RADIUS;
             BlockPos base = player.blockPosition().offset(dx, dy, dz);
-            for (int y = -4; y <= 4; y++) {
+            for (int y = -HerobrineRules.CAVE_SPAWN_VERTICAL_SEARCH_RADIUS;
+                    y <= HerobrineRules.CAVE_SPAWN_VERTICAL_SEARCH_RADIUS; y++) {
                 BlockPos candidate = base.offset(0, y, 0);
                 if (canStandAt(level, candidate)) {
                     return Optional.of(candidate);
@@ -411,16 +414,16 @@ public final class HerobrineEvents {
 
     private static HerobrineEncounter.Phase currentPhase(ServerPlayer player, ServerLevel level) {
         HerobrineEncounterState state = player.getData(IAmZombieAttachments.HEROBRINE_ENCOUNTER);
-        int escalationSightings = IAmZombieConfig.HEROBRINE_ESCALATION_SIGHTINGS.get();
-        int lethalSightings = IAmZombieConfig.HEROBRINE_LETHAL_SIGHTINGS.get();
-        long memoryWindow = IAmZombieConfig.HEROBRINE_MEMORY_WINDOW_TICKS.get();
-        long now = level.getGameTime();
-        int sightings = state.sightings;
-        boolean escalatedBefore = state.escalatedBefore;
-        if (sightings > 0 && HerobrineEncounter.isSightingExpired(now, state.lastSightingTick, memoryWindow)) {
-            sightings = 0;
-        }
-        return HerobrineEncounter.phaseFor(sightings, escalatedBefore, escalationSightings, lethalSightings);
+        // Read-only query: phaseAfterDecay applies the memory decay without recording a sighting
+        // and nothing is written back (decay is only persisted by resolveEncounter, keeping this
+        // identical to the historical local-variable decay here).
+        return HerobrineEncounter.phaseAfterDecay(
+                new HerobrineEncounter.Snapshot(
+                        state.sightings(), state.lastSightingTick(), state.lastLethalTick(), state.escalatedBefore()),
+                level.getGameTime(),
+                IAmZombieServerConfig.HEROBRINE_ESCALATION_SIGHTINGS.get(),
+                IAmZombieServerConfig.HEROBRINE_LETHAL_SIGHTINGS.get(),
+                IAmZombieServerConfig.HEROBRINE_MEMORY_WINDOW_TICKS.get());
     }
 
     /**
@@ -431,12 +434,12 @@ public final class HerobrineEvents {
      * plays a small number of phantom footstep sounds toward the player.
      */
     private static void playOmen(ServerLevel level, ServerPlayer player, HerobrineEncounter.Phase phase) {
-        if (!IAmZombieConfig.HEROBRINE_OMEN_ENABLED.get()) {
+        if (!IAmZombieServerConfig.HEROBRINE_OMEN_ENABLED.get()) {
             return;
         }
 
         HerobrineEncounter.OmenIntensity intensity = HerobrineEncounter.omenIntensityFor(phase);
-        int maxDuration = IAmZombieConfig.HEROBRINE_OMEN_DURATION_TICKS.get();
+        int maxDuration = IAmZombieServerConfig.HEROBRINE_OMEN_DURATION_TICKS.get();
         long restoreAt = level.getGameTime() + Math.min(intensity.durationTicks(), maxDuration);
 
         extinguishLitBlocks(level, player.blockPosition(), intensity.litBlocks(), restoreAt);
@@ -539,7 +542,7 @@ public final class HerobrineEvents {
 
         // HB-JOLT: a vanilla stinger right before the lethal kill (the client vignette/shake is
         // driven by IAmZombieClient reacting to this same sound + proximity).
-        if (IAmZombieConfig.HEROBRINE_JOLT_ENABLED.get()) {
+        if (IAmZombieServerConfig.HEROBRINE_JOLT_ENABLED.get()) {
             level.playSound(null, player.getX(), player.getY(), player.getZ(),
                     SoundEvents.WARDEN_ROAR, SoundSource.HOSTILE, 1.0F, 0.6F);
         }
@@ -561,6 +564,21 @@ public final class HerobrineEvents {
         // screen. Built from `pending` (already deep-copied via snapshotInventory above), so it reuses
         // the exact pre-clear data — do NOT read the inventory after the clear below.
         player.setData(IAmZombieAttachments.HEROBRINE_PENDING_RESPAWN, toSnapshot(pending));
+
+        // C2: counts are computed lazily from the pre-clear `pending` snapshot, never from the live inventory
+        // (which is cleared immediately below) -- no item IDs/NBT, just counts.
+        ZombieLog.debug(() -> {
+            int nonEmptySlots = 0;
+            int totalItems = 0;
+            for (ItemStack stack : pending.inventory()) {
+                if (!stack.isEmpty()) {
+                    nonEmptySlots++;
+                    totalItems += stack.getCount();
+                }
+            }
+            return "state.herobrine_snapshot uuid=" + player.getUUID()
+                    + " nonEmptySlots=" + nonEmptySlots + " totalItems=" + totalItems;
+        });
 
         // Clear the live inventory BEFORE the kill so the real death drops nothing; the snapshot
         // above is restored onto the respawned player.

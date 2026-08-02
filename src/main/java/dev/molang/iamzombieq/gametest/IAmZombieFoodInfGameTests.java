@@ -8,28 +8,22 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.gametest.framework.TestData;
 import net.minecraft.gametest.framework.TestEnvironmentDefinition;
 import net.minecraft.resources.Identifier;
-import net.minecraft.world.Difficulty;
 import net.minecraft.world.level.block.Rotation;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 
 /**
  * A SECOND, self-contained FakePlayer-driven GameTest harness for {@code iamzombieq} covering the rest of the FOOD
  * (FOOD-001..020) and INF (INF-001..005) acceptance domains, complementing the seven tests in
  * {@link IAmZombieGameTests} (which already cover cooked_beef->Hunger, baby_grow, and the villager/pig infection
- * triad). It is registered exactly the way {@link IAmZombieGameTests} is -- on the MOD-bus
- * {@link RegisterGameTestsEvent} (auto-subscribed via {@link EventBusSubscriber}) -- and reuses the SAME shipped
- * {@code data/iamzombieq/structure/empty_test.nbt} structure and the SAME {@link ConsumerGameTestInstance} body
- * holder, so it adds no new resources or production code.
+ * triad). It is registered via the shared {@link IAmZombieGameTestRegistry} (the sole {@code @EventBusSubscriber})
+ * on the MOD-bus {@link RegisterGameTestsEvent}, and reuses the SAME shipped
+ * {@code data/iamzombieq/structure/empty_test.nbt} structure and the same serializable
+ * {@link ConsumerGameTestInstance} function bridge, so it adds no new resources.
  *
- * <p><b>Environments.</b> This harness registers its OWN uniquely-named environments
- * ({@code env_hard_foodinf}, {@code env_default_foodinf}) rather than reusing {@code env_hard}/{@code env_default}
- * from the sibling harness: each {@code RegisterGameTestsEvent#registerEnvironment} call must use a unique id, and a
- * duplicate id would crash the server. {@code env_hard_foodinf} sets HARD difficulty so the horse-infection chance is
- * 1.0 (deterministic conversion), matching the sibling infection tests.
+ * <p><b>Environments.</b> This suite receives the two shared environments ({@code env_default} no-op /
+ * {@code env_hard}) from {@link IAmZombieGameTestRegistry}. {@code env_hard} sets HARD difficulty so the
+ * horse-infection chance is 1.0 (deterministic conversion), matching the sibling infection tests.
  */
-@EventBusSubscriber(modid = IAmZombieMod.MOD_ID)
 public final class IAmZombieFoodInfGameTests {
 
     private static final String STRUCTURE = "empty_test";
@@ -37,14 +31,10 @@ public final class IAmZombieFoodInfGameTests {
     private IAmZombieFoodInfGameTests() {
     }
 
-    @SubscribeEvent
-    public static void onRegisterGameTests(RegisterGameTestsEvent event) {
-        // Uniquely-named environments for THIS harness (never reuse env_hard/env_default -- a duplicate id crashes).
-        Holder<TestEnvironmentDefinition<?>> defaultEnv =
-                event.registerEnvironment(modId("env_default_foodinf"));
-        Holder<TestEnvironmentDefinition<?>> hardEnv =
-                event.registerEnvironment(modId("env_hard_foodinf"), new TestEnvironmentDefinition.SetDifficulty(Difficulty.HARD));
-
+    static void registerAll(
+            RegisterGameTestsEvent event,
+            Holder<TestEnvironmentDefinition<?>> defaultEnv,
+            Holder<TestEnvironmentDefinition<?>> hardEnv) {
         // FOOD: assert the rule's data-table effects (robust presence + amplifier) applied via the eat seam.
         register(event, "food_golden_apple", defaultEnv, IAmZombieFoodInfGameTestBodies::foodGoldenApple);
         register(event, "food_enchanted_golden_apple", defaultEnv, IAmZombieFoodInfGameTestBodies::foodEnchantedGoldenApple);
@@ -77,7 +67,8 @@ public final class IAmZombieFoodInfGameTests {
                 1,            // requiredSuccesses
                 false,        // skyAccess
                 8);           // padding (keeps batched tests spaced so the tight entity-search radius is local)
-        event.registerTest(modId(name), new ConsumerGameTestInstance(info, body));
+        Identifier id = modId(name);
+        event.registerTest(id, new ConsumerGameTestInstance(id, info, body));
     }
 
     private static Identifier modId(String path) {

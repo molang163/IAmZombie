@@ -8,29 +8,24 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.gametest.framework.TestData;
 import net.minecraft.gametest.framework.TestEnvironmentDefinition;
 import net.minecraft.resources.Identifier;
-import net.minecraft.world.Difficulty;
 import net.minecraft.world.level.block.Rotation;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 
 /**
- * FakePlayer-driven NeoForge GameTests for the MOB-targeting, SLEEP (bed), REINF (reinforcement alert) and DOOR
- * (break-speed) domains of {@code iamzombieq} (MC 26.2 / NeoForge 26.2.0.6-beta). A sibling of
+ * FakePlayer- and connected-player-driven NeoForge GameTests for the MOB-targeting, SLEEP (bed/coffin) and DOOR
+ * (break-speed) domains of {@code iamzombieq} (MC 26.2 / NeoForge 26.2.0.25-beta). A sibling of
  * {@link IAmZombieGameTests} that registers an INDEPENDENT set of tests on the same MOD-bus
- * {@link RegisterGameTestsEvent}, using its own uniquely-named HARD environment ({@code env_hard_mobsleep}) so it can
- * never collide with the food/infection suite's {@code env_hard}/{@code env_default}.
+ * {@link RegisterGameTestsEvent} via the shared {@link IAmZombieGameTestRegistry}. Most tests use the shared HARD
+ * environment ({@code env_hard}); the two connected coffin lifecycle tests use separate environments.
  *
- * <p>Registration / structure mechanics mirror {@link IAmZombieGameTests} exactly: each test is a
- * {@link ConsumerGameTestInstance} holding its body inline (the {@code TEST_FUNCTION} loader path is frozen by the
- * time this event fires), and all reuse the shipped 1x1x1 all-air {@code data/iamzombieq/structure/empty_test.nbt}
- * structure. Generous {@code padding} spaces batched tests apart so each test's tight entity-search radius / local
- * block positions only see its own structure.
+ * <p>Registration / structure mechanics mirror {@link IAmZombieGameTests} exactly: each test uses the shared
+ * serializable {@link ConsumerGameTestInstance} function bridge, and all reuse the shipped 1x1x1 all-air
+ * {@code data/iamzombieq/structure/empty_test.nbt} structure. Generous {@code padding} spaces batched tests apart so
+ * each test's tight entity-search radius / local block positions only see its own structure.
  *
- * <p>HARD difficulty is used throughout: the REINF alert test runs the real reinforcement path (HARD enables the
- * spawn attempt alongside the always-on alert), and the MOB/SLEEP/DOOR tests are difficulty-agnostic so HARD is safe.
+ * <p>HARD difficulty is used throughout; the MOB / SLEEP / DOOR / grudge / swarm tests are difficulty-agnostic so
+ * HARD is safe.
  */
-@EventBusSubscriber(modid = IAmZombieMod.MOD_ID)
 public final class IAmZombieMobSleepGameTests {
 
     private static final String STRUCTURE = "empty_test";
@@ -38,12 +33,12 @@ public final class IAmZombieMobSleepGameTests {
     private IAmZombieMobSleepGameTests() {
     }
 
-    @SubscribeEvent
-    public static void onRegisterGameTests(RegisterGameTestsEvent event) {
-        // HARD difficulty, isolated under a unique id so it never reuses the food suite's env_hard/env_default.
-        Holder<TestEnvironmentDefinition<?>> hardEnv =
-                event.registerEnvironment(modId("env_hard_mobsleep"), new TestEnvironmentDefinition.SetDifficulty(Difficulty.HARD));
-
+    static void registerAll(
+            RegisterGameTestsEvent event,
+            Holder<TestEnvironmentDefinition<?>> defaultEnv,
+            Holder<TestEnvironmentDefinition<?>> hardEnv,
+            Holder<TestEnvironmentDefinition<?>> coffinVoteEnv,
+            Holder<TestEnvironmentDefinition<?>> coffinTimeoutEnv) {
         // MOB: who may target the zombie player (the LivingChangeTargetEvent deny-list).
         register(event, "mob_undead_ignores_zombie_player", hardEnv, IAmZombieMobSleepGameTestBodies::mobUndeadIgnoresZombiePlayer);
         register(event, "mob_iron_golem_not_fooled_by_mask", hardEnv, IAmZombieMobSleepGameTestBodies::mobIronGolemNotFooledByMask);
@@ -55,6 +50,10 @@ public final class IAmZombieMobSleepGameTests {
         // SLEEP: a zombie player's bed right-click explodes the bed.
         register(event, "sleep_bed_explodes_on_right_click", hardEnv, IAmZombieMobSleepGameTestBodies::sleepBedExplodesOnRightClick);
         register(event, "coffin_break_drops_one", hardEnv, IAmZombieMobSleepGameTestBodies::coffinBreakDropsExactlyOne);
+        register(event, "coffin_sleep_vote_advances_and_wakes_all", coffinVoteEnv,
+                IAmZombieMobSleepGameTestBodies::coffinSleepVoteAdvancesAndWakesAll);
+        register(event, "coffin_sleep_timeout_wakes_without_skip", coffinTimeoutEnv,
+                IAmZombieMobSleepGameTestBodies::coffinSleepTimeoutWakesWithoutSkip);
 
         // DOOR: empty-hand wooden-door break-speed x3 / item-in-hand no boost.
         register(event, "door_empty_hand_boosts_wooden_door_break", hardEnv, IAmZombieMobSleepGameTestBodies::doorEmptyHandBoostsWoodenDoorBreak);
@@ -64,6 +63,12 @@ public final class IAmZombieMobSleepGameTests {
         // while engaged (past vanilla's 100t lastHurtByMob); then a 300t silent gap proves forgive-after-escape
         // (succeed at +660). Needs a long maxTicks (760 leaves ~100t headroom past the +660 succeed checkpoint).
         register(event, "mob_grudge_sticky_retaliation", hardEnv, 760, IAmZombieMobSleepGameTestBodies::mobGrudgeStickyRetaliation);
+
+        // MOB-SWARM (Fix A): a zombified piglin group-angered at the zombie player is ALLOWED to target it (restores
+        // the pack swarm). Deterministic seam test -- the headless harness does not drive mob target-goals against a
+        // FakePlayer, so this proves the deny-list mechanism the group-anger mixin depends on (idle piglin denied ->
+        // angered piglin allowed; guard skips table attackers). The mixin applying is confirmed by server boot.
+        register(event, "mob_piglin_angered_kin_allowed", hardEnv, IAmZombieMobSleepGameTestBodies::mobPiglinAngeredKinAllowed);
     }
 
     private static void register(
@@ -92,7 +97,8 @@ public final class IAmZombieMobSleepGameTests {
                 1,            // requiredSuccesses
                 false,        // skyAccess
                 8);           // padding
-        event.registerTest(modId(name), new ConsumerGameTestInstance(info, body));
+        Identifier id = modId(name);
+        event.registerTest(id, new ConsumerGameTestInstance(id, info, body));
     }
 
     private static Identifier modId(String path) {
