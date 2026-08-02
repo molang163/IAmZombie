@@ -134,7 +134,7 @@ public final class IAmZombieAttachments {
         @Override
         public SpiderMountData read(IAttachmentHolder holder, ValueInput input) {
             String owner = input.getStringOr("owner", "");
-            // tameProgress is a new field (B1): default 0 for old saves. An owner present in an old save (no
+            // tameProgress defaults to 0 for old saves. An owner present in an old save (no
             // tameProgress key) means the spider was tamed under the previous instant mechanic, so it is
             // treated as fully tamed. getIntOr supplies that default via the single-arg compat constructor.
             int defaultProgress = owner.isBlank() ? 0 : dev.molang.iamzombieq.rules.mount.ZombieMountRules.SPIDER_TAME_PROGRESS_THRESHOLD;
@@ -246,10 +246,10 @@ public final class IAmZombieAttachments {
 
         @Override
         public boolean write(HerobrineEncounterState attachment, ValueOutput output) {
-            output.putInt("sightings", attachment.sightings);
-            output.putLong("lastSightingTick", attachment.lastSightingTick);
-            output.putLong("lastLethalTick", attachment.lastLethalTick);
-            output.putBoolean("escalatedBefore", attachment.escalatedBefore);
+            output.putInt("sightings", attachment.sightings());
+            output.putLong("lastSightingTick", attachment.lastSightingTick());
+            output.putLong("lastLethalTick", attachment.lastLethalTick());
+            output.putBoolean("escalatedBefore", attachment.escalatedBefore());
             return true;
         }
     }

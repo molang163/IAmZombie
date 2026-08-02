@@ -2,10 +2,12 @@ package dev.molang.iamzombieq.util;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import dev.molang.iamzombieq.rules.mount.MountKind;
 import dev.molang.iamzombieq.rules.mount.ZombieMountRules;
 import dev.molang.iamzombieq.state.IAmZombieAttachments;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.animal.chicken.Chicken;
 import net.minecraft.world.entity.monster.spider.Spider;
@@ -13,10 +15,10 @@ import net.minecraft.world.entity.monster.zombie.Zombie;
 import net.minecraft.world.entity.player.Player;
 
 /**
- * Tier-3 capability registry (plan §2 Tier-3 / RPA2): a single place that classifies the mod-DRIVEN mounts
+ * Capability registry that classifies the mod-driven mounts in one place
  * (the ones steered through the controlling-passenger riding flow -- spider, chicken, big-zombie) and answers
  * the questions that were previously duplicated as scattered {@code instanceof} chains across
- * {@code MobMixin#getControllingPassenger}, {@code MobMixin#removeWhenFarAway},
+ * {@code MobMixin#getControllingPassenger}, the MobDespawnEvent handler in ZombieMountEvents,
  * {@code LivingEntityMixin#getRiddenInput/getRiddenSpeed/tickRidden}, and {@code RideHelper}:
  *
  * <ul>
@@ -43,8 +45,7 @@ public enum MountCapability {
 
         @Override
         boolean isControlledBy(Mob mob, Player rider) {
-            return mob instanceof Spider spider
-                    && spider.getData(IAmZombieAttachments.SPIDER_MOUNT).isOwnedBy(rider.getUUID());
+            return mob instanceof Spider spider && isOwnedSpider(spider, rider.getUUID());
         }
     },
     CHICKEN(MountKind.CHICKEN) {
@@ -71,6 +72,24 @@ public enum MountCapability {
     };
 
     private static final List<MountCapability> VALUES = List.of(values());
+
+    /**
+     * Ownership helper: true iff {@code entity} is a {@link Spider} whose {@code SPIDER_MOUNT} attachment is
+     * owned by {@code owner}. Collapses the {@code entity instanceof Spider && spider.getData(SPIDER_MOUNT)
+     * .isOwnedBy(uuid)} chain duplicated across the mount/giant event code; byte-identical to it (a non-Spider,
+     * or a Spider owned by nobody / by someone else, returns false).
+     */
+    public static boolean isOwnedSpider(Entity entity, UUID owner) {
+        return entity instanceof Spider spider && isOwnedSpider(spider, owner);
+    }
+
+    /**
+     * Ownership helper for an already narrowed {@link Spider}: true iff its {@code SPIDER_MOUNT} attachment is
+     * owned by {@code owner}. Identical to the inlined {@code spider.getData(SPIDER_MOUNT).isOwnedBy(owner)}.
+     */
+    public static boolean isOwnedSpider(Spider spider, UUID owner) {
+        return spider.getData(IAmZombieAttachments.SPIDER_MOUNT).isOwnedBy(owner);
+    }
 
     private final MountKind mountKind;
 

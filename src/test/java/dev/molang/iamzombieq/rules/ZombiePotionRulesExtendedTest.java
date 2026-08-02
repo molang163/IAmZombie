@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
  * {@link ZombiePotionRulesTest}.
  *
  * <p>Signature is {@code shouldInvertHealAndHarm(boolean isPlayer, boolean isCreative, boolean isSpectator)} and the
- * committed contract (N6) is {@code isPlayer && !isSpectator}: a zombie player inverts heal/harm in EVERY game mode
+ * contract is {@code isPlayer && !isSpectator}: a zombie player inverts heal/harm in EVERY game mode
  * (survival, adventure, creative) and only a spectator or a non-player keeps vanilla instant-potion behaviour. The
  * {@code isCreative} parameter is retained for call-site stability but no longer gates the result. Pure booleans, fully
  * runnable on the JUnit-only classpath.
@@ -27,9 +27,9 @@ class ZombiePotionRulesExtendedTest {
 
     @Test
     void creativeZombiePlayerStillInvertsHealAndHarm() {
-        // N6: creative aligns with survival; isCreative no longer suppresses the inversion.
+        // Creative aligns with survival; isCreative does not suppress the inversion.
         assertTrue(ZombiePotionRules.shouldInvertHealAndHarm(true, true, false),
-                "a creative zombie player still inverts heal/harm (N6)");
+                "a creative zombie player still inverts heal and harm");
     }
 
     @Test

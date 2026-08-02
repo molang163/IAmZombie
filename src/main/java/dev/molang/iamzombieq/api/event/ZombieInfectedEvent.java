@@ -7,13 +7,13 @@ import net.neoforged.bus.api.Event;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * Observer event fired AFTER a zombie player has infected/transformed another entity (design §5.a). Not
+ * Observer event fired after a zombie player has infected or transformed another entity. Not
  * cancellable; the {@code attacker}/{@code victim} are live entity references to be read, not mutated.
  *
  * <p>Posted on the native {@code NeoForge.EVENT_BUS}; subscribe with {@code @SubscribeEvent}.
  *
- * <p>NOTE (Phase-1): fired by the infection handler AFTER each successful conversion, in both the villager and the
- * pig/piglin path.
+ * <p>Fired by the infection handler after each successful conversion, in all four infection paths
+ * (villager, pig/piglin, horse, nautilus).
  *
  * <p>Part of the STABLE public API surface (semver 1.x).
  */

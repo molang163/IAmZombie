@@ -7,7 +7,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Addon hook for supplying a custom {@link FoodRule} for an item a zombie player eats (design §5.b). Register an
+ * Addon hook for supplying a custom {@link FoodRule} for an item a zombie player eats. Register an
  * implementation via the {@link IZombieExtensions} registration entry point.
  *
  * <p>The food handler consults registered providers in order and the FIRST non-null result wins; returning

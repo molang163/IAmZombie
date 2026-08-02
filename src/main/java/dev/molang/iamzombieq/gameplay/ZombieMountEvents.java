@@ -1,39 +1,30 @@
 package dev.molang.iamzombieq.gameplay;
-import dev.molang.iamzombieq.util.Difficulties;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.UUID;
-
-import dev.molang.iamzombieq.IAmZombieConfig;
 import dev.molang.iamzombieq.IAmZombieItems;
-import dev.molang.iamzombieq.rules.difficulty.GameDifficulty;
+import dev.molang.iamzombieq.rules.mount.BigZombieTargetRules;
 import dev.molang.iamzombieq.rules.mount.MountKind;
-import dev.molang.iamzombieq.rules.ZombieInfectionRules;
+import dev.molang.iamzombieq.rules.food.ZombieFoodRules;
 import dev.molang.iamzombieq.rules.mount.ZombieMountRules;
 import dev.molang.iamzombieq.rules.core.ZombieSize;
 import dev.molang.iamzombieq.state.IAmZombieAttachments;
 import dev.molang.iamzombieq.state.SpiderMountData;
+import dev.molang.iamzombieq.util.MountCapability;
 import dev.molang.iamzombieq.util.RideHelper;
+import dev.molang.iamzombieq.util.ZombiePlayerGates;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.Difficulty;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.EntitySpawnReason;
-import net.minecraft.world.entity.EntityTypes;
-import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.animal.chicken.Chicken;
 import net.minecraft.world.entity.animal.equine.AbstractHorse;
 import net.minecraft.world.entity.animal.equine.Horse;
 import net.minecraft.world.entity.animal.equine.SkeletonHorse;
 import net.minecraft.world.entity.animal.equine.ZombieHorse;
 import net.minecraft.world.entity.animal.golem.IronGolem;
-import net.minecraft.world.entity.animal.nautilus.Nautilus;
 import net.minecraft.world.entity.animal.nautilus.ZombieNautilus;
 import net.minecraft.world.entity.monster.spider.Spider;
 import net.minecraft.world.entity.monster.Monster;
@@ -45,30 +36,17 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.neoforge.event.EventHooks;
 import net.neoforged.neoforge.event.entity.EntityMountEvent;
 import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
-import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.living.LivingChangeTargetEvent;
+import net.neoforged.neoforge.event.entity.living.MobDespawnEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
-import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.tick.EntityTickEvent;
 
-public final class ZombieMountEvents {
-    // Keyed by horse UUID. Bounded LinkedHashMap with insertion-order eviction: entries are normally
-    // removed when the horse dies to a zombie player, but horses that die from other sources (lava, fall,
-    // etc.) would otherwise leak their snapshot until server stop. The cap prevents unbounded growth while
-    // the eldest (least recently inserted) entry is dropped first; 256 pending dying-horse snapshots is far
-    // more than can realistically be in flight, so eviction never disturbs a real in-progress conversion.
-    private static final int PENDING_HORSE_HEALTH_RATIOS_CAP = 256;
-    private static final Map<UUID, Float> PENDING_HORSE_HEALTH_RATIOS =
-            new LinkedHashMap<>(16, 0.75F, false) {
-                @Override
-                protected boolean removeEldestEntry(Map.Entry<UUID, Float> eldest) {
-                    return size() > PENDING_HORSE_HEALTH_RATIOS_CAP;
-                }
-            };
+import java.util.ArrayList;
+import java.util.List;
 
+public final class ZombieMountEvents {
     private ZombieMountEvents() {
     }
 
@@ -85,7 +63,7 @@ public final class ZombieMountEvents {
 
         // Only VANILLA (living) horses are refused. ZombieHorse/SkeletonHorse extend AbstractHorse (siblings of
         // Horse, not subclasses), so isNormalHorse's instanceof Horse is already false for them; this early block
-        // therefore never fires for undead horses and the ZombieHorse feed handler below stays reachable (B5).
+        // therefore never fires for undead horses and the ZombieHorse feed handler below stays reachable.
         if (isNormalHorse(event.getTarget()) && !ZombieMountRules.canMount(true, MountKind.NORMAL_HORSE, false)) {
             event.setCanceled(true);
             event.setCancellationResult(InteractionResult.SUCCESS_SERVER);
@@ -100,11 +78,14 @@ public final class ZombieMountEvents {
             if (isZombieHorseFood(stack)) {
                 if (zombieHorse.getHealth() < zombieHorse.getMaxHealth()) {
                     if (!player.level().isClientSide()) {
-                        zombieHorse.heal(stack.is(IAmZombieItems.SUPER_ROTTEN_FLESH.get()) ? 10.0F : 4.0F);
+                        String itemId = stack.is(IAmZombieItems.SUPER_ROTTEN_FLESH.get())
+                                ? ZombieFoodRules.SUPER_ROTTEN_FLESH_ID
+                                : "minecraft:rotten_flesh";
+                        zombieHorse.heal(ZombieMountRules.zombieHorseHealAmount(itemId));
                         stack.consume(1, player);
                     }
                 } else if (!player.level().isClientSide()) {
-                    // B7: at full health the feed used to silently do nothing and not cancel. Acknowledge the
+                    // At full health the feed used to silently do nothing and not cancel. Acknowledge the
                     // interaction (don't waste the food) so it isn't silently dropped.
                     player.sendSystemMessage(Component.translatable("iamzombieq.message.mount.horse_full_health"));
                 }
@@ -144,7 +125,10 @@ public final class ZombieMountEvents {
 
     @SubscribeEvent
     public static void onEntityMount(EntityMountEvent event) {
-        if (!event.isMounting() || !(event.getEntityMounting() instanceof Player player) || !isZombiePlayer(player)) {
+        if (!event.isMounting()
+                || !(event.getEntityMounting() instanceof Player player)
+                || player.level().isClientSide()
+                || !isZombiePlayer(player)) {
             return;
         }
 
@@ -176,42 +160,13 @@ public final class ZombieMountEvents {
 
         float healthAfterDamage = Math.max(0.0F, horse.getHealth() - event.getAmount());
         if (healthAfterDamage <= 0.0F) {
-            PENDING_HORSE_HEALTH_RATIOS.put(horse.getUUID(), preDamageHorseHealthRatio(horse));
+            // The snapshot map (PENDING_HORSE_HEALTH_RATIOS) and the whole horse/nautilus death-conversion
+            // flow -- including the difficulty roll via configuredInfectionChance(gameDifficulty(level.getDifficulty()))
+            // -- live in ZombieInfectionEvents with the other infection paths. Only this pre-death capture stays
+            // here, because it is an attribute of the incoming-damage event; it feeds the map through the
+            // package-level accessor on ZombieInfectionEvents (same package).
+            ZombieInfectionEvents.recordPendingHorseHealthRatio(horse.getUUID(), preDamageHorseHealthRatio(horse));
         }
-    }
-
-    @SubscribeEvent
-    public static void onLivingDeath(LivingDeathEvent event) {
-        if (event.getEntity() instanceof Nautilus nautilus && nautilus.level() instanceof ServerLevel nautilusLevel) {
-            handleNautilusDeath(event, nautilusLevel, nautilus);
-            return;
-        }
-
-        if (!(event.getEntity() instanceof Horse horse) || !(horse.level() instanceof ServerLevel level)) {
-            return;
-        }
-        if (!(event.getSource().getEntity() instanceof Player player) || !isZombiePlayer(player)) {
-            return;
-        }
-        Float pendingHorseHealthRatio = PENDING_HORSE_HEALTH_RATIOS.remove(horse.getUUID());
-        if (!ZombieInfectionRules.shouldInfect(IAmZombieConfig.configuredInfectionChance(gameDifficulty(level.getDifficulty())), horse.getRandom().nextDouble())) {
-            return;
-        }
-        if (!EventHooks.canLivingConvert(horse, EntityTypes.ZOMBIE_HORSE, timer -> {})) {
-            return;
-        }
-
-        if (convertHorseToZombieHorse(level, horse, player, pendingHorseHealthRatio)) {
-            if (player instanceof ServerPlayer serverPlayer) {
-                IAmZombieAdvancements.award(serverPlayer, IAmZombieAdvancements.HORSE_INFECTION);
-            }
-            event.setCanceled(true);
-        }
-    }
-
-    @SubscribeEvent
-    public static void onServerStopped(ServerStoppedEvent event) {
-        PENDING_HORSE_HEALTH_RATIOS.clear();
     }
 
     @SubscribeEvent
@@ -224,7 +179,7 @@ public final class ZombieMountEvents {
             }
             return;
         }
-        if (spider.getData(IAmZombieAttachments.SPIDER_MOUNT).isOwnedBy(player.getUUID())) {
+        if (MountCapability.isOwnedSpider(spider, player.getUUID())) {
             event.setNewAboutToBeSetTarget(null);
         }
     }
@@ -240,11 +195,11 @@ public final class ZombieMountEvents {
         // .getRiddenInput/getRiddenSpeed drive it). The actual climb motion now comes from SpiderMixin, which
         // makes a ridden owner-spider's onClimbable() track its local horizontalCollision on the controlling
         // client. Here we keep the SERVER-side synced climbing flag in sync with collision so the climb
-        // ANIMATION shows for observers; B6 fix: track the flag in BOTH directions (true when colliding, false
+        // animation shows for observers; track the flag in both directions (true when colliding, false
         // otherwise) instead of only ever poking it true.
         if (event.getEntity() instanceof Spider spider
                 && spider.getFirstPassenger() instanceof Player rider
-                && spider.getData(IAmZombieAttachments.SPIDER_MOUNT).isOwnedBy(rider.getUUID())) {
+                && MountCapability.isOwnedSpider(spider, rider.getUUID())) {
             spider.setClimbing(spider.horizontalCollision);
             return;
         }
@@ -254,14 +209,24 @@ public final class ZombieMountEvents {
         // getRiddenSpeed/tickRidden drive + rotate them), so no per-tick driveMount is needed here. We keep only
         // the big-zombie auto-attack acquisition, which is not part of the movement flow.
         if (event.getEntity() instanceof Zombie zombie && zombie.level() instanceof ServerLevel level && isRideableBigZombie(zombie)
-                && zombie.getFirstPassenger() instanceof Player player && isBabyZombiePlayer(player)) {
+                && zombie.getFirstPassenger() instanceof Player player && RideHelper.isBabyZombieRider(player)) {
             maybeAutoTargetForMountedBigZombie(level, zombie, player);
         }
     }
 
+    @SubscribeEvent
+    public static void onMobDespawn(MobDespawnEvent event) {
+        // Defensive backstop moved from MobMixin#removeWhenFarAway: an actively serving mod mount
+        // must never despawn. The event gates Mob.checkDespawn ahead of every distance/no-action branch, so the
+        // coverage is a superset of the old single-method injection.
+        if (MountCapability.activeFor(event.getEntity()).isPresent()) {
+            event.setResult(MobDespawnEvent.Result.DENY);
+        }
+    }
+
     private static boolean isZombiePlayer(Player player) {
-        // N6: creative players follow zombie mount rules too (flight/invuln stay inherent). Only spectators are excluded.
-        return !player.isSpectator();
+        // Creative players follow zombie mount rules too (flight and invulnerability stay inherent). Only spectators are excluded.
+        return ZombiePlayerGates.isZombiePlayer(player);
     }
 
     private static boolean isZombieHorseFood(ItemStack stack) {
@@ -287,22 +252,7 @@ public final class ZombieMountEvents {
             return;
         }
 
-        if (!ZombieMountRules.canMount(true, zombieSize(player), MountKind.BIG_ZOMBIE, false)) {
-            event.setCanceled(true);
-            event.setCancellationResult(InteractionResult.SUCCESS_SERVER);
-            return;
-        }
-
-        if (!player.level().isClientSide()) {
-            zombie.setTarget(null);
-            // Forced ride (rule already approved) so sneaking does not veto Entity.canRide; see handleSpiderInteract.
-            player.startRiding(zombie, true, true);
-            // B4: keep the mount from despawning while it serves as the player's ride (spider/horses already
-            // do this). The MobMixin#removeWhenFarAway override is the defensive backstop.
-            zombie.setPersistenceRequired();
-        }
-        event.setCanceled(true);
-        event.setCancellationResult(InteractionResult.SUCCESS_SERVER);
+        completeSimpleMountInteraction(event, player, zombie, MountKind.BIG_ZOMBIE, true);
     }
 
     private static void handleChickenInteract(PlayerInteractEvent.EntityInteract event, Player player, Chicken chicken) {
@@ -311,18 +261,31 @@ public final class ZombieMountEvents {
             return;
         }
 
-        if (!ZombieMountRules.canMount(true, zombieSize(player), MountKind.CHICKEN, false)) {
+        completeSimpleMountInteraction(event, player, chicken, MountKind.CHICKEN, false);
+    }
+
+    private static void completeSimpleMountInteraction(
+            PlayerInteractEvent.EntityInteract event,
+            Player player,
+            Mob mount,
+            MountKind mountKind,
+            boolean clearTargetBeforeRiding
+    ) {
+        if (!ZombieMountRules.canMount(true, zombieSize(player), mountKind, false)) {
             event.setCanceled(true);
             event.setCancellationResult(InteractionResult.SUCCESS_SERVER);
             return;
         }
 
         if (!player.level().isClientSide()) {
+            if (clearTargetBeforeRiding) {
+                mount.setTarget(null);
+            }
             // Forced ride (rule already approved) so sneaking does not veto Entity.canRide; see handleSpiderInteract.
-            player.startRiding(chicken, true, true);
-            // B4: keep the mount from despawning while it serves as the player's ride (spider/horses already
-            // do this). The MobMixin#removeWhenFarAway override is the defensive backstop.
-            chicken.setPersistenceRequired();
+            player.startRiding(mount, true, true);
+            // Keep the mount from despawning while it serves as the player's ride (spiders and horses already
+            // do this). The onMobDespawn MobDespawnEvent handler is the defensive backstop.
+            mount.setPersistenceRequired();
         }
         event.setCanceled(true);
         event.setCancellationResult(InteractionResult.SUCCESS_SERVER);
@@ -357,7 +320,7 @@ public final class ZombieMountEvents {
 
     private static void handleSpiderFood(Player player, Spider spider, ItemStack stack, SpiderMountData data) {
         if (!data.hasOwner()) {
-            // B1: taming is no longer instant. Each feed adds taming progress (food-dependent) and the
+            // Taming is no longer instant. Each feed adds food-dependent progress, and the
             // spider only becomes owned once progress reaches the threshold. Always consume the food + give
             // per-feed feedback so the interaction is never silently dropped.
             String foodId = spiderFoodId(stack);
@@ -402,93 +365,13 @@ public final class ZombieMountEvents {
             return "minecraft:spider_eye";
         }
         if (stack.is(IAmZombieItems.SUPER_ROTTEN_FLESH.get())) {
-            return "iamzombieq:super_rotten_flesh";
+            return ZombieFoodRules.SUPER_ROTTEN_FLESH_ID;
         }
         return "";
     }
 
-    private static GameDifficulty gameDifficulty(Difficulty difficulty) {
-        return Difficulties.toGameDifficulty(difficulty);
-    }
-
-    private static boolean convertHorseToZombieHorse(ServerLevel level, Horse horse, Player owner, Float pendingHorseHealthRatio) {
-        ZombieHorse zombieHorse = EntityTypes.ZOMBIE_HORSE.create(level, EntitySpawnReason.CONVERSION);
-        if (zombieHorse == null) {
-            return false;
-        }
-
-        zombieHorse.snapTo(horse.getX(), horse.getY(), horse.getZ(), horse.getYRot(), horse.getXRot());
-        zombieHorse.finalizeSpawn(level, level.getCurrentDifficultyAt(horse.blockPosition()), EntitySpawnReason.CONVERSION, null);
-        zombieHorse.setTamed(true);
-        zombieHorse.setOwner(owner);
-        zombieHorse.setPersistenceRequired();
-        copyHorseStateToZombieHorse(horse, zombieHorse, pendingHorseHealthRatio);
-
-        level.addFreshEntity(zombieHorse);
-        horse.discard();
-        level.levelEvent(null, 1026, horse.blockPosition(), 0);
-        return true;
-    }
-
-    private static void copyHorseStateToZombieHorse(Horse horse, ZombieHorse zombieHorse, Float pendingHorseHealthRatio) {
-        zombieHorse.setItemSlot(EquipmentSlot.SADDLE, horse.getItemBySlot(EquipmentSlot.SADDLE).copy());
-        zombieHorse.setItemSlot(EquipmentSlot.BODY, horse.getItemBySlot(EquipmentSlot.BODY).copy());
-        zombieHorse.setAge(horse.getAge());
-
-        float healthRatio = pendingHorseHealthRatio != null ? pendingHorseHealthRatio : horse.getHealth() / horse.getMaxHealth();
-        zombieHorse.setHealth(Math.max(1.0F, zombieHorse.getMaxHealth() * healthRatio));
-        if (horse.hasCustomName()) {
-            zombieHorse.setCustomName(horse.getCustomName());
-            zombieHorse.setCustomNameVisible(horse.isCustomNameVisible());
-        }
-    }
-
     private static float preDamageHorseHealthRatio(Horse horse) {
         return Math.max(0.0F, horse.getHealth() / horse.getMaxHealth());
-    }
-
-    private static void handleNautilusDeath(LivingDeathEvent event, ServerLevel level, Nautilus nautilus) {
-        if (!(event.getSource().getEntity() instanceof Player player) || !isZombiePlayer(player)) {
-            return;
-        }
-        if (!ZombieInfectionRules.shouldInfect(IAmZombieConfig.configuredInfectionChance(gameDifficulty(level.getDifficulty())), nautilus.getRandom().nextDouble())) {
-            return;
-        }
-        if (!EventHooks.canLivingConvert(nautilus, EntityTypes.ZOMBIE_NAUTILUS, timer -> {})) {
-            return;
-        }
-
-        if (convertNautilusToZombieNautilus(level, nautilus, player)) {
-            event.setCanceled(true);
-        }
-    }
-
-    private static boolean convertNautilusToZombieNautilus(ServerLevel level, Nautilus nautilus, Player owner) {
-        ZombieNautilus zombieNautilus = EntityTypes.ZOMBIE_NAUTILUS.create(level, EntitySpawnReason.CONVERSION);
-        if (zombieNautilus == null) {
-            return false;
-        }
-
-        zombieNautilus.snapTo(nautilus.getX(), nautilus.getY(), nautilus.getZ(), nautilus.getYRot(), nautilus.getXRot());
-        zombieNautilus.finalizeSpawn(level, level.getCurrentDifficultyAt(nautilus.blockPosition()), EntitySpawnReason.CONVERSION, null);
-        zombieNautilus.setTame(true, true);
-        zombieNautilus.setOwner(owner);
-        zombieNautilus.setPersistenceRequired();
-        zombieNautilus.setHealth(zombieNautilus.getMaxHealth());
-        zombieNautilus.setItemSlot(EquipmentSlot.SADDLE, new ItemStack(Items.SADDLE));
-        if (nautilus.hasCustomName()) {
-            zombieNautilus.setCustomName(nautilus.getCustomName());
-            zombieNautilus.setCustomNameVisible(nautilus.isCustomNameVisible());
-        }
-
-        level.addFreshEntity(zombieNautilus);
-        nautilus.discard();
-        level.levelEvent(null, 1026, nautilus.blockPosition(), 0);
-        return true;
-    }
-
-    private static boolean isBabyZombiePlayer(Player player) {
-        return isZombiePlayer(player) && zombieSize(player) == ZombieSize.BABY;
     }
 
     private static ZombieSize zombieSize(Player player) {
@@ -524,7 +407,7 @@ public final class ZombieMountEvents {
     }
 
     private static boolean spiderOwnedBy(Entity mounted, Player player) {
-        return mounted instanceof Spider spider && spider.getData(IAmZombieAttachments.SPIDER_MOUNT).isOwnedBy(player.getUUID());
+        return MountCapability.isOwnedSpider(mounted, player.getUUID());
     }
 
     private static boolean isRideableBigZombie(Zombie zombie) {
@@ -574,9 +457,6 @@ public final class ZombieMountEvents {
         }
     }
 
-    // How long (ticks) the mount remembers who the rider attacked / was attacked by. ~5s, like vanilla aggro memory.
-    private static final int RIDER_COMBAT_MEMORY_TICKS = 100;
-
     /**
      * Target priority for a ridden big zombie (design): (1) whoever the rider just attacked, (2) whoever just
      * attacked the rider, then (3) the nearest creature zombies naturally aggro (villager > iron golem > other
@@ -584,17 +464,18 @@ public final class ZombieMountEvents {
      * the proximity scan.
      */
     private static LivingEntity selectMountedBigZombieTarget(ServerLevel level, Zombie zombie, Player rider) {
-        LivingEntity riderTarget = rider.getLastHurtMob();
-        if (isMountAttackable(zombie, rider, riderTarget)
-                && rider.tickCount - rider.getLastHurtMobTimestamp() <= RIDER_COMBAT_MEMORY_TICKS) {
-            return riderTarget;
-        }
-        LivingEntity riderAttacker = rider.getLastHurtByMob();
-        if (isMountAttackable(zombie, rider, riderAttacker)
-                && rider.tickCount - rider.getLastHurtByMobTimestamp() <= RIDER_COMBAT_MEMORY_TICKS) {
-            return riderAttacker;
-        }
-        return findMountedBigZombieTarget(level, zombie, rider);
+        return BigZombieTargetRules.pickTarget(
+                () -> riderCombatTarget(zombie, rider, rider.getLastHurtMob(),
+                        rider.tickCount - rider.getLastHurtMobTimestamp()),
+                () -> riderCombatTarget(zombie, rider, rider.getLastHurtByMob(),
+                        rider.tickCount - rider.getLastHurtByMobTimestamp()),
+                () -> scanMountedBigZombieTargets(level, zombie, rider));
+    }
+
+    private static BigZombieTargetRules.RiderCombatTarget<LivingEntity> riderCombatTarget(
+            Zombie zombie, Player rider, LivingEntity candidate, int ageTicks) {
+        return new BigZombieTargetRules.RiderCombatTarget<>(
+                candidate, isMountAttackable(zombie, rider, candidate), ageTicks);
     }
 
     /** A target the ridden mount may attack: alive, not the rider, not the mount itself, not the rider's own
@@ -605,54 +486,28 @@ public final class ZombieMountEvents {
                 && candidate != rider
                 && candidate != zombie
                 && candidate.isAlive()
-                && !(candidate instanceof Spider spider
-                        && spider.getData(IAmZombieAttachments.SPIDER_MOUNT).isOwnedBy(rider.getUUID()));
+                && !MountCapability.isOwnedSpider(candidate, rider.getUUID());
     }
 
-    private static LivingEntity findMountedBigZombieTarget(ServerLevel level, Zombie zombie, Player rider) {
+    private static List<BigZombieTargetRules.Candidate<LivingEntity>> scanMountedBigZombieTargets(
+            ServerLevel level, Zombie zombie, Player rider) {
         AABB area = zombie.getBoundingBox().inflate(ZombieMountRules.BIG_ZOMBIE_AUTO_ATTACK_RANGE);
-
-        // Single broad scan, classified into the same three tiers as before. Priority is unchanged:
-        // nearest villager > nearest iron golem > nearest other-monster. The candidate predicate keeps the
-        // shared filters (exclude the rider, isAlive, zombie.canAttack); the per-tier checks below reproduce
-        // the previous per-class predicates (the broad "other monster" tier still excludes fellow zombies and
-        // the rider's own tamed spider mount).
-        LivingEntity nearestVillager = null;
-        double nearestVillagerDistance = Double.MAX_VALUE;
-        LivingEntity nearestGolem = null;
-        double nearestGolemDistance = Double.MAX_VALUE;
-        LivingEntity nearestMonster = null;
-        double nearestMonsterDistance = Double.MAX_VALUE;
+        List<BigZombieTargetRules.Candidate<LivingEntity>> candidates = new ArrayList<>();
 
         for (LivingEntity candidate : level.getEntitiesOfClass(LivingEntity.class, area, candidate ->
                 candidate != rider && candidate.isAlive() && zombie.canAttack(candidate))) {
-            double distance = zombie.distanceToSqr(candidate);
-            if (candidate instanceof AbstractVillager) {
-                if (distance < nearestVillagerDistance) {
-                    nearestVillager = candidate;
-                    nearestVillagerDistance = distance;
-                }
-            } else if (candidate instanceof IronGolem) {
-                if (distance < nearestGolemDistance) {
-                    nearestGolem = candidate;
-                    nearestGolemDistance = distance;
-                }
-            } else if (candidate instanceof Monster
+            boolean riderOwnedSpider = candidate instanceof Monster
                     && !(candidate instanceof Zombie)
-                    && !(candidate instanceof Spider spider && spider.getData(IAmZombieAttachments.SPIDER_MOUNT).isOwnedBy(rider.getUUID()))) {
-                if (distance < nearestMonsterDistance) {
-                    nearestMonster = candidate;
-                    nearestMonsterDistance = distance;
-                }
-            }
+                    && MountCapability.isOwnedSpider(candidate, rider.getUUID());
+            BigZombieTargetRules.TargetTier tier = BigZombieTargetRules.classify(
+                    candidate instanceof AbstractVillager,
+                    candidate instanceof IronGolem,
+                    candidate instanceof Monster,
+                    candidate instanceof Zombie,
+                    riderOwnedSpider);
+            candidates.add(new BigZombieTargetRules.Candidate<>(
+                    candidate, tier, zombie.distanceToSqr(candidate)));
         }
-
-        if (nearestVillager != null) {
-            return nearestVillager;
-        }
-        if (nearestGolem != null) {
-            return nearestGolem;
-        }
-        return nearestMonster;
+        return candidates;
     }
 }

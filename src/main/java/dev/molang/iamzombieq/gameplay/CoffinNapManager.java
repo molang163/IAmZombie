@@ -1,7 +1,10 @@
 package dev.molang.iamzombieq.gameplay;
 
 import dev.molang.iamzombieq.block.CoffinBlock;
+import dev.molang.iamzombieq.internal.logging.ZombieLog;
 import dev.molang.iamzombieq.rules.sleep.ZombieSleepRules;
+import dev.molang.iamzombieq.rules.sleep.ZombieSleepRules.NapWakeReason;
+import dev.molang.iamzombieq.util.ZombiePlayerGates;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
@@ -21,6 +24,7 @@ import net.minecraft.world.level.gamerules.GameRules;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.util.ClockAdjustment;
 import net.neoforged.neoforge.event.EventHooks;
+import net.neoforged.neoforge.event.entity.player.CanContinueSleepingEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
@@ -80,11 +84,23 @@ public final class CoffinNapManager {
     }
 
     /**
-     * True while {@code id} is in an active coffin nap. Used by {@code PlayerCoffinSleepMixin} to keep a daytime coffin
+     * True while {@code id} is in an active coffin nap. Used by {@link #onCanContinueSleeping} to keep a daytime coffin
      * napper asleep against vanilla's per-tick bed-rule auto-wake.
      */
     public static boolean isNapping(UUID id) {
         return NAPS.containsKey(id);
+    }
+
+    @SubscribeEvent
+    public static void onCanContinueSleeping(CanContinueSleepingEvent event) {
+        // Replaces the deleted PlayerCoffinSleep mixin's @Redirect. Both vanilla wake gates run through this event
+        // (Player.tick daytime wake @ Player.java:258; bed-exists check @ LivingEntity.java:3937), while manual
+        // wake (ServerGamePacketListenerImpl:1752) and this manager's own wake() (stopSleeping direct) do NOT,
+        // so forcing continue-sleeping while napping cannot trap the player; a destroyed coffin is handled by
+        // this manager's per-tick isBed self-check -> wake().
+        if (event.getEntity() instanceof ServerPlayer player && isNapping(player.getUUID())) {
+            event.setContinueSleeping(true);
+        }
     }
 
     @SubscribeEvent
@@ -106,13 +122,13 @@ public final class CoffinNapManager {
         // Coffin broken / no longer a bed -> wake with no time skip.
         BlockState headState = level.getBlockState(nap.headPos);
         if (!headState.isBed(level, nap.headPos, player)) {
-            wake(player, "iamzombieq.message.coffin.disturbed");
+            wake(player, NapWakeReason.DISTURBED);
             return;
         }
 
         // 2) Took damage -> disturbed, wake with no time skip. Cheap health-delta comparison.
         if (player.getHealth() < nap.lastHealth) {
-            wake(player, "iamzombieq.message.coffin.disturbed");
+            wake(player, NapWakeReason.DISTURBED);
             return;
         }
         nap.lastHealth = player.getHealth();
@@ -121,7 +137,7 @@ public final class CoffinNapManager {
         // the exact same predicate as the right-click entry check (CoffinBlock.hasHostileNearby), throttled to once
         // per second so the per-napper AABB scan stays cheap. Entry and mid-nap therefore agree on "what's nearby".
         if ((level.getGameTime() - nap.startTick) % 20L == 0L && CoffinBlock.hasHostileNearby(level, player, nap.headPos)) {
-            wake(player, "iamzombieq.message.coffin.disturbed");
+            wake(player, NapWakeReason.DISTURBED);
             return;
         }
 
@@ -132,11 +148,13 @@ public final class CoffinNapManager {
         if (!ZombieSleepRules.enoughCoffinSleepers(deep, eligible, percentage)) {
             // Already deep-asleep but the vote is short and we have waited too long -> wake (anti-deadlock).
             if (player.isSleepingLongEnough() && level.getGameTime() - nap.startTick > DEEP_SLEEP_TICKS + MAX_WAIT_TICKS) {
-                wake(player, "iamzombieq.message.coffin.not_enough");
+                wake(player, NapWakeReason.NOT_ENOUGH_TIMEOUT);
                 return;
             }
-            int needed = ZombieSleepRules.coffinSleepersNeeded(eligible, percentage);
-            player.sendOverlayMessage(Component.translatable("iamzombieq.message.coffin.players_sleeping", deep, needed));
+            if (ZombieSleepRules.shouldSendCoffinVoteProgress(level.getGameTime(), nap.startTick)) {
+                int needed = ZombieSleepRules.coffinSleepersNeeded(eligible, percentage);
+                player.sendOverlayMessage(Component.translatable(ZombieSleepRules.coffinVoteProgressMessageKey(), deep, needed));
+            }
             return;
         }
 
@@ -144,12 +162,14 @@ public final class CoffinNapManager {
         // the whole dimension's naps at once ensures the clock is only advanced a single time per vote.
         boolean skipped = advanceToNight(level);
         wakeAllInLevel(level, skipped);
+        ZombieLog.debug(() -> "state.coffin_vote dimension=" + level.dimension().identifier()
+                + " deep=" + deep + " eligible=" + eligible + " skipped=" + skipped);
     }
 
     private static int countEligibleZombies(ServerLevel level) {
         int n = 0;
         for (ServerPlayer p : level.players()) {
-            if (!p.isSpectator()) {
+            if (ZombiePlayerGates.isZombiePlayer(p)) {
                 n++;
             }
         }
@@ -167,15 +187,16 @@ public final class CoffinNapManager {
         return deep;
     }
 
-    private static void wake(ServerPlayer player, String messageKey) {
+    private static void wake(ServerPlayer player, NapWakeReason reason) {
         if (player.isSleeping()) {
             player.stopSleeping();
         }
         NAPS.remove(player.getUUID());
-        player.sendOverlayMessage(Component.translatable(messageKey));
+        player.sendOverlayMessage(Component.translatable(ZombieSleepRules.napWakeMessageKey(reason)));
     }
 
     private static void wakeAllInLevel(ServerLevel level, boolean skipped) {
+        NapWakeReason reason = skipped ? NapWakeReason.VOTE_PASSED : NapWakeReason.VOTE_PASSED_NO_SKIP;
         for (UUID id : new ArrayList<>(NAPS.keySet())) {
             ServerPlayer p = level.getServer().getPlayerList().getPlayer(id);
             if (p == null) {
@@ -189,8 +210,7 @@ public final class CoffinNapManager {
                 p.stopSleeping();
             }
             NAPS.remove(id);
-            p.sendOverlayMessage(Component.translatable(
-                    skipped ? "iamzombieq.message.coffin.rested" : "iamzombieq.message.coffin.respawn_set_only"));
+            p.sendOverlayMessage(Component.translatable(ZombieSleepRules.napWakeMessageKey(reason)));
             level.playSound(null, p.blockPosition(), SoundEvents.WOOL_PLACE, SoundSource.BLOCKS, 0.8F, 0.6F);
         }
     }

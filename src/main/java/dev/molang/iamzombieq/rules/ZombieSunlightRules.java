@@ -26,7 +26,15 @@ public final class ZombieSunlightRules {
             boolean canSeeSky,
             boolean inWaterRainOrPowderSnow
     ) {
-        return isVanillaSunBurnTick(monstersBurn, brightness, () -> randomFloat, canSeeSky, inWaterRainOrPowderSnow);
+        return isVanillaSunBurnTick(
+                new SunBurnContext(
+                        monstersBurn,
+                        brightness,
+                        randomFloat,
+                        canSeeSky,
+                        inWaterRainOrPowderSnow
+                )
+        );
     }
 
     public static boolean isVanillaSunBurnTick(
@@ -36,10 +44,26 @@ public final class ZombieSunlightRules {
             boolean canSeeSky,
             boolean inWaterRainOrPowderSnow
     ) {
-        return monstersBurn
-                && brightness > 0.5F
-                && randomFloat.getAsDouble() * 30.0F < (brightness - 0.4F) * 2.0F
-                && !inWaterRainOrPowderSnow
-                && canSeeSky;
+        if (!monstersBurn || !(brightness > 0.5F)) {
+            return false;
+        }
+        double randomValue = randomFloat.getAsDouble();
+        return isVanillaSunBurnTick(
+                new SunBurnContext(
+                        monstersBurn,
+                        brightness,
+                        randomValue,
+                        canSeeSky,
+                        inWaterRainOrPowderSnow
+                )
+        );
+    }
+
+    public static boolean isVanillaSunBurnTick(SunBurnContext context) {
+        return context.monstersBurn()
+                && context.brightness() > 0.5F
+                && context.randomValue() * 30.0F < (context.brightness() - 0.4F) * 2.0F
+                && !context.inWaterRainOrPowderSnow()
+                && context.canSeeSky();
     }
 }

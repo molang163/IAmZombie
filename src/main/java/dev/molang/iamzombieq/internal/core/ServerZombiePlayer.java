@@ -6,7 +6,6 @@ import dev.molang.iamzombieq.api.event.ZombieEvolvedEvent;
 import dev.molang.iamzombieq.api.event.ZombieTransformPreEvent;
 import dev.molang.iamzombieq.api.event.ZombieTransformedEvent;
 import dev.molang.iamzombieq.internal.event.ZombieEventPublisher;
-import dev.molang.iamzombieq.platform.Services;
 import dev.molang.iamzombieq.rules.DeathOutcome;
 import dev.molang.iamzombieq.rules.core.ZombieForm;
 import dev.molang.iamzombieq.rules.core.ZombieSize;
@@ -19,20 +18,21 @@ import org.jetbrains.annotations.NotNull;
 
 /**
  * Internal, server-authoritative implementation of {@link IZombiePlayer} over a {@link ServerPlayer} (design
- * §4.2). Centralizes the {@code setData -> syncData -> fire} lifecycle so no caller can forget to sync.
+ * public facade. Centralizes the {@code setData -> automatic sync -> fire} lifecycle.
  *
  * <p>The form-changing mutators ({@code transformToForm}, {@code evolveFromDeath}, {@code resetAfterOrdinaryDeath})
  * follow: snapshot the before-state, post the cancellable Pre event (return {@code false} if canceled), write the
- * attachment, sync it, post the observer Post event, and return {@code true}. The non-form mutators
+ * attachment through {@code setData} (which NeoForge synchronizes automatically), post the observer Post event,
+ * and return {@code true}. The non-form mutators
  * ({@code setSize}, {@code claimReward}) are NOT form changes, so they skip the transform events entirely — they
- * just write + sync and return {@code true}. All attachment and event operations go through the platform
- * {@link Services} + {@link ZombieEventPublisher} so listener exceptions are isolated and the bus is named in one
- * place.
+ * just write through {@code setData} and return {@code true}. The attachment operations use the entity
+ * data-attachment API ({@code getData}/{@code setData}) directly, and every event post goes through the
+ * {@link ZombieEventPublisher} so listener exceptions are isolated and the bus is named in one place.
  *
- * <p><b>FakePlayer-safe by construction (PLAN A6):</b> typed on {@code ServerPlayer} (a FakePlayer IS one) and it
- * NEVER reads the player's network connection. The {@code syncData} step is a no-op for a connectionless player,
- * so a FakePlayer roundtrip is well-defined. (A runtime FakePlayer GameTest is deferred to a future GameTest
- * harness; this design future-enables it.)
+ * <p><b>FakePlayer-safe by construction:</b> typed on {@code ServerPlayer} (a FakePlayer is one) and it
+ * NEVER reads the player's network connection. The automatic sync triggered by {@code setData} produces no
+ * network send for a connectionless player, so a FakePlayer roundtrip is well-defined. (A runtime FakePlayer
+ * GameTest is deferred to a future GameTest harness; this design future-enables it.)
  */
 @ApiStatus.Internal
 public final class ServerZombiePlayer implements IZombiePlayer {
@@ -50,13 +50,12 @@ public final class ServerZombiePlayer implements IZombiePlayer {
     }
 
     private PlayerZombieData data() {
-        return Services.ATTACHMENTS.get(player, IAmZombieAttachments.PLAYER_ZOMBIE.get());
+        return player.getData(IAmZombieAttachments.PLAYER_ZOMBIE.get());
     }
 
-    /** Writes {@code next} and pushes the network sync (the sync is a no-op for a connectionless player). */
+    /** Writes {@code next}; NeoForge {@code setData} performs the configured network sync automatically. */
     private void writeAndSync(PlayerZombieData next) {
-        Services.ATTACHMENTS.set(player, IAmZombieAttachments.PLAYER_ZOMBIE.get(), next);
-        Services.ATTACHMENTS.sync(player, IAmZombieAttachments.PLAYER_ZOMBIE.get());
+        player.setData(IAmZombieAttachments.PLAYER_ZOMBIE.get(), next);
     }
 
     // ---- reads ----
@@ -140,7 +139,7 @@ public final class ServerZombiePlayer implements IZombiePlayer {
     @Override
     public boolean setSize(@NotNull ZombieSize size) {
         // A size change is NOT a form change, so it does NOT fire the transform events (which would carry
-        // from==to). Just write the new size + sync; the write is unconditional.
+        // from==to). Just write the new size; setData synchronizes it automatically and the write is unconditional.
         PlayerZombieData before = data();
         ZombieForm form = before.state().form();
         writeAndSync(before.withState(new ZombieState(form, size)));
@@ -150,7 +149,7 @@ public final class ServerZombiePlayer implements IZombiePlayer {
     @Override
     public boolean claimReward(@NotNull ZombieForm form) {
         // Claiming a first-evolution reward is a bookkeeping flag, not a form change, so it does NOT fire the
-        // transform events. Just write the flag + sync; the write is unconditional.
+        // transform events. Just write the flag; setData synchronizes it automatically and the write is unconditional.
         writeAndSync(withRewardClaimed(data(), form));
         return true;
     }

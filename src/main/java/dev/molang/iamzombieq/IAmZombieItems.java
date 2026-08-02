@@ -1,4 +1,5 @@
 package dev.molang.iamzombieq;
+import dev.molang.iamzombieq.rules.DisguiseRules;
 import dev.molang.iamzombieq.util.ModIds;
 
 import net.minecraft.core.Direction;
@@ -59,14 +60,17 @@ public final class IAmZombieItems {
                     .component(DataComponents.UNBREAKABLE, Unit.INSTANCE)
     );
 
+    // The disguise_mask registration path AND its equipment-asset id both flow from the single
+    // DisguiseRules.DISGUISE_MASK_PATH constant, so the item id, the equip material id and DisguiseRules.DISGUISE_MASK_ID
+    // (= iamzombieq:disguise_mask) can never drift apart.
     public static final DeferredItem<Item> DISGUISE_MASK = ITEMS.registerSimpleItem(
-            "disguise_mask",
+            DisguiseRules.DISGUISE_MASK_PATH,
             properties -> properties
                     .durability(15)
                     .component(DataComponents.EQUIPPABLE, Equippable.builder(EquipmentSlot.HEAD)
                             .setAsset(ResourceKey.create(
                                     EquipmentAssets.ROOT_ID,
-                                    ModIds.id("disguise_mask")))
+                                    ModIds.id(DisguiseRules.DISGUISE_MASK_PATH)))
                             .build())
     );
 

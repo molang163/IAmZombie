@@ -1,5 +1,8 @@
 package dev.molang.iamzombieq.rules.mount;
 import dev.molang.iamzombieq.rules.core.ZombieSize;
+import dev.molang.iamzombieq.rules.food.ZombieFoodRules;
+
+import java.util.Map;
 
 public final class ZombieMountRules {
     // Ridden movement-speed attribute values for the mod-driven mounts. These feed LivingEntity#getRiddenSpeed
@@ -19,7 +22,7 @@ public final class ZombieMountRules {
     /**
      * Ridden movement-speed (movement-speed-attribute units) for a mod-driven mount kind, used by the
      * controlling-passenger riding flow (LivingEntity#getRiddenSpeed). Spider/chicken/big-zombie are unified
-     * here (B3); other kinds return 0 so they keep their vanilla ridden speed. Pure logic so it stays
+     * here; other kinds return 0 so they keep their vanilla ridden speed. Pure logic so it stays
      * unit-testable. The spider value can be overridden by config; see {@link #spiderRiddenSpeed(float)}.
      */
     public static float riddenSpeedFor(MountKind mountKind) {
@@ -34,7 +37,7 @@ public final class ZombieMountRules {
     /**
      * Resolved spider ridden speed: the configured override when set (the config default equals
      * {@link #DEFAULT_SPIDER_MOUNT_SPEED}), else the rules default. Centralizes the spider's speed in the
-     * same place as chicken/big-zombie (B3) while preserving the existing config override. Non-positive
+     * same place as chicken and big zombie while preserving the existing config override. Non-positive
      * config values fall back to the rules default so a misconfiguration can never freeze the mount.
      */
     public static float spiderRiddenSpeed(float configuredSpeed) {
@@ -78,22 +81,15 @@ public final class ZombieMountRules {
         };
     }
 
-    public static boolean isSpiderTamingFood(String itemId) {
-        return itemId.equals("minecraft:rotten_flesh")
-                || itemId.equals("minecraft:spider_eye")
-                || itemId.equals("iamzombieq:super_rotten_flesh");
-    }
-
-    public static float spiderHealAmount(String itemId) {
+    public static float zombieHorseHealAmount(String itemId) {
         return switch (itemId) {
+            case ZombieFoodRules.SUPER_ROTTEN_FLESH_ID -> 10.0F;
             case "minecraft:rotten_flesh" -> 4.0F;
-            case "minecraft:spider_eye" -> 6.0F;
-            case "iamzombieq:super_rotten_flesh" -> 10.0F;
             default -> 0.0F;
         };
     }
 
-    // --- Spider taming progress (B1) ---
+    // --- Spider taming progress ---
     // Taming is no longer instant: each feed adds progress points and the spider is tamed once progress
     // reaches the threshold. Pure logic so it is unit-testable; the event layer accumulates it on
     // SpiderMountData (progress field, default 0 = untamed). A pre-existing owned spider is already tamed.
@@ -102,14 +98,31 @@ public final class ZombieMountRules {
     public static final int SPIDER_TAME_PROGRESS_SPIDER_EYE = 35;
     public static final int SPIDER_TAME_PROGRESS_SUPER_ROTTEN_FLESH = 60;
 
+    /** One spider-food row: the healing and taming progress it grants when fed to a spider. */
+    public record SpiderFood(float healAmount, int tameProgress) {
+    }
+
+    // The single source of truth for the three spider-food lookups (taming eligibility / heal / progress), so the
+    // per-item numbers live in one place instead of three parallel switches. Same ids and values as before.
+    private static final Map<String, SpiderFood> SPIDER_FOODS = Map.of(
+            "minecraft:rotten_flesh", new SpiderFood(4.0F, SPIDER_TAME_PROGRESS_ROTTEN_FLESH),
+            "minecraft:spider_eye", new SpiderFood(6.0F, SPIDER_TAME_PROGRESS_SPIDER_EYE),
+            ZombieFoodRules.SUPER_ROTTEN_FLESH_ID, new SpiderFood(10.0F, SPIDER_TAME_PROGRESS_SUPER_ROTTEN_FLESH)
+    );
+
+    public static boolean isSpiderTamingFood(String itemId) {
+        return SPIDER_FOODS.containsKey(itemId);
+    }
+
+    public static float spiderHealAmount(String itemId) {
+        SpiderFood food = SPIDER_FOODS.get(itemId);
+        return food == null ? 0.0F : food.healAmount();
+    }
+
     /** Taming-progress points awarded by one feed of the given food id (0 for non-taming foods). */
     public static int spiderTameProgressFor(String itemId) {
-        return switch (itemId) {
-            case "minecraft:rotten_flesh" -> SPIDER_TAME_PROGRESS_ROTTEN_FLESH;
-            case "minecraft:spider_eye" -> SPIDER_TAME_PROGRESS_SPIDER_EYE;
-            case "iamzombieq:super_rotten_flesh" -> SPIDER_TAME_PROGRESS_SUPER_ROTTEN_FLESH;
-            default -> 0;
-        };
+        SpiderFood food = SPIDER_FOODS.get(itemId);
+        return food == null ? 0 : food.tameProgress();
     }
 
     /** Accumulated progress after one feed, clamped to the threshold so it never overshoots/underflows. */

@@ -23,14 +23,6 @@ public final class ZombieReinforcementRules {
     public static final int REINFORCEMENT_RANGE_MAX = 40;
     /** Other players must be at least this far away for a reinforcement to spawn (vanilla 7.0). */
     public static final double MIN_PLAYER_DISTANCE = 7.0;
-    /**
-     * Documentation/test-only light ceiling for the {@link #isSpawnPositionViable} predicate below; NOT a vanilla
-     * constant. Vanilla has no monster-spawn light level of 9 -- the overworld gate is a probabilistic uniform[0,7]
-     * sample plus block-light 0 (Monster#isDarkEnoughToSpawn / dimension_type monster_spawn_light_level). The LIVE
-     * reinforcement path gates instead on SpawnPlacements.checkSpawnRules(REINFORCEMENT) (ZombiePlayerEvents), so
-     * this constant never affects runtime spawns; it only documents that reinforcements prefer the dark.
-     */
-    public static final int MAX_SPAWN_LIGHT = 9;
 
     /** Per-spawn decay applied to the caller's reinforcement chance (vanilla -0.05). */
     public static final double REINFORCEMENT_PENALTY = -0.05;
@@ -98,19 +90,11 @@ public final class ZombieReinforcementRules {
         return magnitude * sign;
     }
 
-    /**
-     * Documentation predicate approximating the conditions the LIVE path enforces via SpawnPlacements
-     * (isSpawnPositionOk + checkSpawnRules(REINFORCEMENT)): a solid top surface to stand on, a dark-enough spot
-     * (modelled here as light at most {@value #MAX_SPAWN_LIGHT}; vanilla's real test is a probabilistic
-     * uniform[0,7] sample, not a fixed 9), no player within {@value #MIN_PLAYER_DISTANCE}, and no
-     * collision/obstruction at the spawn box. Not consulted at runtime.
-     */
-    public static boolean isSpawnPositionViable(boolean solidTopSurface, int lightLevel, boolean playerWithin7, boolean collisionFree) {
-        return solidTopSurface
-                && lightLevel <= MAX_SPAWN_LIGHT
-                && !playerWithin7
-                && collisionFree;
-    }
+    // The LIVE reinforcement spawn path enforces a solid top surface, a dark-enough spot, no player within
+    // MIN_PLAYER_DISTANCE, and a collision-free spawn box directly via vanilla SpawnPlacements
+    // (isSpawnPositionOk + checkSpawnRules(REINFORCEMENT)) in ZombieReinforcementEvents; there is no pure-logic
+    // predicate to mirror it because vanilla's real dark-enough test is a probabilistic uniform[0,7] sample, not
+    // a fixed light ceiling.
 
     /** The base reinforcement chance for a freshly-rolled zombie: {@code roll01 * 0.1} in [0, 0.1]. */
     public static double baseReinforcementChance(double roll01) {

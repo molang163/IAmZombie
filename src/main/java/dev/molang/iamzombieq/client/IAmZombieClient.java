@@ -1,20 +1,24 @@
 package dev.molang.iamzombieq.client;
 import dev.molang.iamzombieq.util.ModIds;
 
-import java.util.Locale;
-import java.util.Set;
-import java.util.stream.Collectors;
-
 import dev.molang.iamzombieq.IAmZombieClientConfig;
-import dev.molang.iamzombieq.IAmZombieConfig;
+import dev.molang.iamzombieq.IAmZombieMod;
+import dev.molang.iamzombieq.IAmZombiePreferencesConfig;
+import dev.molang.iamzombieq.IAmZombieServerConfig;
 import dev.molang.iamzombieq.IAmZombieEntities;
 import dev.molang.iamzombieq.block.HerobrineHeadType;
 import dev.molang.iamzombieq.entity.HerobrineEntity;
+import dev.molang.iamzombieq.gameplay.ZombieFoodEvents;
 import dev.molang.iamzombieq.rules.food.FoodRule;
 import dev.molang.iamzombieq.rules.herobrine.HerobrineEncounter;
 import dev.molang.iamzombieq.rules.herobrine.HerobrineRules;
 import dev.molang.iamzombieq.rules.ZombieRenderRules;
 import dev.molang.iamzombieq.rules.food.ZombieFoodRules;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
+import java.util.List;
+import java.util.Set;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.geom.ModelLayerLocation;
@@ -26,6 +30,7 @@ import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.resources.Identifier;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.Connection;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.entity.Entity;
@@ -35,6 +40,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.config.ModConfig;
+import net.neoforged.fml.event.config.ModConfigEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
@@ -49,6 +56,28 @@ import net.neoforged.neoforge.event.entity.EntityLeaveLevelEvent;
 import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
 
 public final class IAmZombieClient {
+    private static final String AUTHORITY_RUNTIME =
+            "dev.molang.iamzombieq.config.ConfigAuthorityRuntime";
+    private static final Class<?> AUTHORITY_RUNTIME_CLASS =
+            authorityRuntimeClass();
+    private static final MethodHandle CLEAR_AUTHORITY =
+            authorityHandle("clear", void.class, Connection.class);
+    private static final MethodHandle AUTHORITY_READY =
+            authorityHandle("isReady", boolean.class, Connection.class);
+    private static final MethodHandle REFRESH_AUTHORITY =
+            authorityHandle(
+                    "refreshClientFromSyncedServerConfig",
+                    void.class,
+                    Connection.class);
+    private static final MethodHandle CONFIGURED_ZOMBIE_FOODS =
+            authorityHandle(
+                    "configuredZombieFoods", List.class, Connection.class);
+    private static final MethodHandle RESOLVE_FOOD_CONFIG =
+            authorityHandle(
+                    "resolveFoodConfig",
+                    int.class,
+                    Connection.class,
+                    String.class);
     private static final ZombiePlayerShapeEntities ZOMBIE_PLAYER_SHAPES = new ZombiePlayerShapeEntities();
     // The Herobrine head renders through the vanilla skull pipeline (block-entity renderer, worn CustomHeadLayer,
     // and the minecraft:head item model) using a 64x64 humanoid head model with a fixed Herobrine skin.
@@ -75,6 +104,7 @@ public final class IAmZombieClient {
     }
 
     public static void register(IEventBus modEventBus) {
+        modEventBus.addListener(IAmZombieClient::onServerConfigReloading);
         modEventBus.addListener(IAmZombieClient::registerRenderers);
         modEventBus.addListener(IAmZombieClient::registerRendererLayers);
         modEventBus.addListener(IAmZombieClient::registerSkullLayers);
@@ -82,6 +112,38 @@ public final class IAmZombieClient {
         modEventBus.addListener(IAmZombieClient::registerRenderStateModifiers);
         NeoForge.EVENT_BUS.register(IAmZombieClient.class);
         NeoForge.EVENT_BUS.register(DrownedVisionEvents.class);
+    }
+
+    private static void onServerConfigReloading(
+            ModConfigEvent.Reloading event) {
+        ModConfig config = event.getConfig();
+        if (!IAmZombieMod.MOD_ID.equals(config.getModId())
+                || config.getType() != ModConfig.Type.SERVER
+                || config.getSpec() != IAmZombieServerConfig.SPEC) {
+            return;
+        }
+        var loaded = config.getLoadedConfig();
+        if (loaded == null) {
+            return;
+        }
+
+        Minecraft minecraft = Minecraft.getInstance();
+        Connection captured = currentConnection(minecraft);
+        if (captured == null) {
+            return;
+        }
+        boolean inMemory =
+                loaded.config().configFormat().isInMemory();
+        if (captured.isMemoryConnection() == inMemory) {
+            return;
+        }
+
+        ConfigAuthorityReloadQueue.enqueue(
+                captured,
+                () -> currentConnection(minecraft),
+                minecraft::execute,
+                IAmZombieClient::authorityReady,
+                IAmZombieClient::refreshClientAuthority);
     }
 
     private static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
@@ -159,7 +221,7 @@ public final class IAmZombieClient {
      * heartbeat under the silence. OBSERVATION stays dead-silent (period 0 = no beat).
      */
     private static void tickHeartbeat(Minecraft minecraft) {
-        if (!IAmZombieConfig.HEROBRINE_HEARTBEAT_ENABLED.get()
+        if (!IAmZombiePreferencesConfig.HEROBRINE_HEARTBEAT_ENABLED.get()
                 || herobrinePresenceCount <= 0
                 || minecraft.player == null
                 || minecraft.level == null) {
@@ -167,7 +229,7 @@ public final class IAmZombieClient {
             return;
         }
 
-        double far = IAmZombieConfig.HEROBRINE_HEARTBEAT_FAR_DISTANCE.get();
+        double far = IAmZombiePreferencesConfig.HEROBRINE_HEARTBEAT_FAR_DISTANCE.get();
         HerobrineEntity nearest = null;
         double nearestDist = Double.MAX_VALUE;
         AABB area = minecraft.player.getBoundingBox().inflate(far);
@@ -179,7 +241,7 @@ public final class IAmZombieClient {
             }
         }
 
-        double near = IAmZombieConfig.HEROBRINE_HEARTBEAT_NEAR_DISTANCE.get();
+        double near = IAmZombiePreferencesConfig.HEROBRINE_HEARTBEAT_NEAR_DISTANCE.get();
         if (nearest == null || nearestDist > far) {
             heartbeatCooldown = 0;
             return;
@@ -206,7 +268,8 @@ public final class IAmZombieClient {
 
     @SubscribeEvent
     public static void onRenderGui(RenderGuiEvent.Post event) {
-        if (joltVignetteTicks <= 0 || !IAmZombieConfig.HEROBRINE_JOLT_ENABLED.get()) {
+        if (joltVignetteTicks <= 0
+                || !IAmZombiePreferencesConfig.HEROBRINE_JOLT_VIGNETTE_ENABLED.get()) {
             return;
         }
         // HB-JOLT: a brief translucent red vignette. Fades over the armed frames.
@@ -219,6 +282,13 @@ public final class IAmZombieClient {
 
     @SubscribeEvent
     public static void onClientLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
+        if (event.getConnection() != null) {
+            try {
+                CLEAR_AUTHORITY.invokeExact(event.getConnection());
+            } catch (Throwable failure) {
+                throw failClosed(failure);
+            }
+        }
         ZOMBIE_PLAYER_SHAPES.clear();
         ZombiePlayerVisuals.clearSkins();
         herobrinePresenceCount = 0;
@@ -252,7 +322,7 @@ public final class IAmZombieClient {
         Identifier id = event.getSound().getIdentifier();
         // The lethal stinger arms the brief jolt vignette (HB-JOLT) and is always allowed through.
         if (id.equals(JOLT_STINGER_ID)) {
-            if (IAmZombieConfig.HEROBRINE_JOLT_ENABLED.get()) {
+            if (IAmZombiePreferencesConfig.HEROBRINE_JOLT_VIGNETTE_ENABLED.get()) {
                 joltVignetteTicks = 8;
             }
             return;
@@ -272,7 +342,7 @@ public final class IAmZombieClient {
     }
 
     @SubscribeEvent
-    public static void onRenderArm(RenderArmEvent event) {
+    public static void onRenderArm(RenderArmEvent<?> event) {
         ZombiePlayerVisuals.renderFirstPersonArm(event);
     }
 
@@ -293,8 +363,95 @@ public final class IAmZombieClient {
             return;
         }
 
-        FoodRule rule = ZombieFoodRules.ruleFor(itemId, configuredZombieFoods());
+        Connection authorityConnection =
+                Minecraft.getInstance().getConnection().getConnection();
+        FoodRule rule = ZombieFoodRules.ruleFor(
+                itemId,
+                Set.copyOf(configuredZombieFoods(authorityConnection)),
+                ZombieFoodEvents::resolveEffect,
+                key -> resolveFoodConfig(authorityConnection, key));
         event.getToolTip().add(Component.translatable(ZombieFoodRules.tooltipKey(rule)).withStyle(ChatFormatting.DARK_GREEN));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<String> configuredZombieFoods(
+            Connection connection) {
+        try {
+            return (List<String>) CONFIGURED_ZOMBIE_FOODS.invokeExact(
+                    connection);
+        } catch (Throwable failure) {
+            throw failClosed(failure);
+        }
+    }
+
+    private static int resolveFoodConfig(
+            Connection connection, String semanticKey) {
+        try {
+            return (int) RESOLVE_FOOD_CONFIG.invokeExact(
+                    connection, semanticKey);
+        } catch (Throwable failure) {
+            throw failClosed(failure);
+        }
+    }
+
+    private static boolean authorityReady(Connection connection) {
+        try {
+            return (boolean) AUTHORITY_READY.invokeExact(connection);
+        } catch (Throwable failure) {
+            throw failClosed(failure);
+        }
+    }
+
+    private static void refreshClientAuthority(Connection connection) {
+        try {
+            REFRESH_AUTHORITY.invokeExact(connection);
+        } catch (Throwable failure) {
+            throw failClosed(failure);
+        }
+    }
+
+    private static Connection currentConnection(Minecraft minecraft) {
+        var listener = minecraft.getConnection();
+        return listener == null ? null : listener.getConnection();
+    }
+
+    private static Class<?> authorityRuntimeClass() {
+        try {
+            return Class.forName(
+                    AUTHORITY_RUNTIME,
+                    true,
+                    IAmZombieClient.class.getClassLoader());
+        } catch (ClassNotFoundException failure) {
+            throw new ExceptionInInitializerError(failure);
+        }
+    }
+
+    private static MethodHandle authorityHandle(
+            String methodName,
+            Class<?> returnType,
+            Class<?>... parameterTypes) {
+        try {
+            MethodHandles.Lookup lookup = MethodHandles.privateLookupIn(
+                    AUTHORITY_RUNTIME_CLASS, MethodHandles.lookup());
+            return lookup.findStatic(
+                    AUTHORITY_RUNTIME_CLASS,
+                    methodName,
+                    MethodType.methodType(returnType, parameterTypes));
+        } catch (ReflectiveOperationException failure) {
+            throw new ExceptionInInitializerError(failure);
+        }
+    }
+
+    private static RuntimeException failClosed(Throwable failure) {
+        if (failure instanceof RuntimeException runtime) {
+            return runtime;
+        }
+        if (failure instanceof Error error) {
+            throw error;
+        }
+        return new IllegalStateException(
+                "Configuration authority runtime invocation failed",
+                failure);
     }
 
     private static boolean isLocalPlayerNearHerobrine(Minecraft minecraft) {
@@ -320,10 +477,4 @@ public final class IAmZombieClient {
         mutedByHerobrine = false;
     }
 
-    private static Set<String> configuredZombieFoods() {
-        return IAmZombieConfig.ZOMBIE_FOODS.get()
-                .stream()
-                .map(value -> value.toLowerCase(Locale.ROOT))
-                .collect(Collectors.toUnmodifiableSet());
-    }
 }

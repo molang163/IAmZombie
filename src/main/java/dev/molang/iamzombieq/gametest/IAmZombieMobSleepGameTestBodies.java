@@ -1,38 +1,52 @@
 package dev.molang.iamzombieq.gametest;
 
+import java.util.UUID;
+
+import dev.molang.iamzombieq.IAmZombieBlocks;
 import dev.molang.iamzombieq.IAmZombieItems;
+import dev.molang.iamzombieq.block.CoffinBlock;
+import dev.molang.iamzombieq.gameplay.CoffinNapManager;
+import dev.molang.iamzombieq.gameplay.ZombieMobTargetingEvents;
 import dev.molang.iamzombieq.rules.core.ZombieForm;
 import dev.molang.iamzombieq.rules.core.ZombieSize;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.Holder;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.clock.ClockTimeMarkers;
+import net.minecraft.world.clock.WorldClock;
+import net.minecraft.world.entity.EntityReference;
 import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.animal.axolotl.Axolotl;
 import net.minecraft.world.entity.animal.equine.TraderLlama;
 import net.minecraft.world.entity.animal.golem.IronGolem;
 import net.minecraft.world.entity.monster.skeleton.Skeleton;
 import net.minecraft.world.entity.monster.zombie.Zombie;
+import net.minecraft.world.entity.monster.zombie.ZombifiedPiglin;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.HorizontalDirectionalBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BedPart;
+import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.common.CommonHooks;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.common.util.FakePlayer;
-import net.neoforged.neoforge.event.entity.living.LivingChangeTargetEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 
 /**
- * FakePlayer-driven GameTest bodies for the MOB-targeting, SLEEP (bed/coffin), REINF (reinforcement alert) and DOOR
+ * FakePlayer-driven GameTest bodies for the MOB-targeting, SLEEP (bed/coffin) and DOOR
  * (break-speed) domains of {@code iamzombieq}, registered by {@link IAmZombieMobSleepGameTests}.
  *
  * <p>Each body drives the EXACT server-side NeoForge hook the mod's handler subscribes to, the way vanilla fires it,
@@ -44,9 +58,6 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
  *   <li><b>SLEEP</b> — {@code CommonHooks.onRightClickBlock(player, MAIN_HAND, absPos, hit)} (the seam vanilla fires
  *       on a block right-click); the mod's {@code ZombieSleepEvents.onRightClickBlock} explodes the bed. We assert the
  *       bed blocks are gone.</li>
- *   <li><b>REINF</b> — the real {@code hurtServer(mobAttack(attacker))} damage pipeline fires
- *       {@code LivingIncomingDamageEvent}; the mod's {@code ZombiePlayerEvents.onIncomingDamage -> reinforceZombiePlayer
- *       -> alertFormMatchedUndead} retargets nearby form-matched undead onto the attacker. We assert the kin retargets.</li>
  *   <li><b>DOOR</b> — {@code EventHooks.getBreakSpeed(player, doorState, original, absPos)} (the seam vanilla fires
  *       from {@code Player.getDestroySpeed}); the mod's {@code ZombiePlayerEvents.onBreakSpeed} boosts the empty-hand
  *       wooden-door break speed x3. We assert the returned speed.</li>
@@ -57,6 +68,8 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
  * at the frozen build's config defaults ({@code undeadIgnoreZombiePlayer=true}, {@code reinforcementsEnabled=true}).
  */
 final class IAmZombieMobSleepGameTestBodies {
+    private static final long COFFIN_TEST_DAY_CLOCK = 1000L;
+    private static final int DEEP_SLEEP_TICKS = 100;
 
     private IAmZombieMobSleepGameTestBodies() {
     }
@@ -74,7 +87,7 @@ final class IAmZombieMobSleepGameTestBodies {
         FakePlayer player = GameTestPlayers.spawnZombieFakePlayer(helper, ZombieForm.NORMAL, ZombieSize.ADULT);
         Zombie zombie = helper.spawn(EntityTypes.ZOMBIE, new BlockPos(2, 2, 2));
 
-        if (clearedTarget(zombie, player)) {
+        if (GameTestSeams.targetDenied(zombie, player)) {
             helper.succeed();
         } else {
             helper.fail("a vanilla zombie's target on the zombie player should be cleared (undead ignore the zombie player)");
@@ -91,7 +104,7 @@ final class IAmZombieMobSleepGameTestBodies {
         player.setItemSlot(EquipmentSlot.HEAD, new ItemStack(IAmZombieItems.DISGUISE_MASK.get()));
         IronGolem golem = helper.spawn(EntityTypes.IRON_GOLEM, new BlockPos(2, 2, 2));
 
-        if (!clearedTarget(golem, player)) {
+        if (!GameTestSeams.targetDenied(golem, player)) {
             helper.succeed();
         } else {
             helper.fail("the iron golem must keep its target on the zombie player even through the disguise mask");
@@ -105,7 +118,7 @@ final class IAmZombieMobSleepGameTestBodies {
         FakePlayer player = GameTestPlayers.spawnZombieFakePlayer(helper, ZombieForm.DROWNED, ZombieSize.ADULT);
         Axolotl axolotl = helper.spawn(EntityTypes.AXOLOTL, new BlockPos(2, 2, 2));
 
-        if (!clearedTarget(axolotl, player)) {
+        if (!GameTestSeams.targetDenied(axolotl, player)) {
             helper.succeed();
         } else {
             helper.fail("the axolotl must keep its target on a DROWNED-form zombie player");
@@ -120,7 +133,7 @@ final class IAmZombieMobSleepGameTestBodies {
         FakePlayer player = GameTestPlayers.spawnZombieFakePlayer(helper, ZombieForm.NORMAL, ZombieSize.ADULT);
         Axolotl axolotl = helper.spawn(EntityTypes.AXOLOTL, new BlockPos(2, 2, 2));
 
-        if (clearedTarget(axolotl, player)) {
+        if (GameTestSeams.targetDenied(axolotl, player)) {
             helper.succeed();
         } else {
             helper.fail("the axolotl must NOT target a NORMAL-form zombie player (it hunts only the drowned form)");
@@ -135,7 +148,7 @@ final class IAmZombieMobSleepGameTestBodies {
         FakePlayer player = GameTestPlayers.spawnZombieFakePlayer(helper, ZombieForm.NORMAL, ZombieSize.ADULT);
         TraderLlama llama = helper.spawn(EntityTypes.TRADER_LLAMA, new BlockPos(2, 2, 2));
 
-        if (!clearedTarget(llama, player)) {
+        if (!GameTestSeams.targetDenied(llama, player)) {
             helper.succeed();
         } else {
             helper.fail("the trader llama must keep its target on a NORMAL-form zombie player");
@@ -150,22 +163,13 @@ final class IAmZombieMobSleepGameTestBodies {
         FakePlayer player = GameTestPlayers.spawnZombieFakePlayer(helper, ZombieForm.ZOMBIFIED_PIGLIN, ZombieSize.ADULT);
         TraderLlama llama = helper.spawn(EntityTypes.TRADER_LLAMA, new BlockPos(2, 2, 2));
 
-        if (clearedTarget(llama, player)) {
+        if (GameTestSeams.targetDenied(llama, player)) {
             helper.succeed();
         } else {
             helper.fail("the trader llama must NOT target a ZOMBIFIED_PIGLIN-form zombie player (its spit list excludes piglins)");
         }
     }
 
-    /**
-     * Drive the real central targeting seam: post {@code onLivingChangeTarget(mob, player, MOB_TARGET)} the way
-     * vanilla fires it from {@code Mob.setTarget}, and report whether the mod's deny-list NULLED the target.
-     */
-    private static boolean clearedTarget(Mob mob, FakePlayer player) {
-        LivingChangeTargetEvent event = CommonHooks.onLivingChangeTarget(
-                mob, player, LivingChangeTargetEvent.LivingTargetType.MOB_TARGET);
-        return event.getNewAboutToBeSetTarget() == null;
-    }
 
     // ---------------------------------------------------------------------------------------------------------
     // SLEEP: a zombie player's bed right-click explodes the bed (SLEEP-001)
@@ -209,7 +213,7 @@ final class IAmZombieMobSleepGameTestBodies {
     }
 
     /**
-     * SLEEP/RC3: breaking ONE half of a 2-part coffin drops EXACTLY ONE coffin item (no dupe). The coffin is a
+     * Breaking one half of a two-part coffin drops exactly one coffin item. The coffin is a
      * bed-style two-part block; breaking the FOOT cascades the orphaned HEAD to air via updateShape, and BOTH halves
      * run the loot table. The fix gates the loot item entry to part=head, so only the head half yields an item ->
      * exactly one. (Before the fix, both halves dropped -> 2, an infinite dupe.) Break via the level's
@@ -245,6 +249,446 @@ final class IAmZombieMobSleepGameTestBodies {
             }
             helper.succeed();
         });
+    }
+
+    /**
+     * Two connected NORMAL zombies enter separate coffins through the real block-use path. Both must accumulate the
+     * full vanilla 100-tick deep-sleep timer before the 100% vote advances the default clock to NIGHT and wakes both
+     * players, clearing their nap and occupied state together.
+     */
+    static void coffinSleepVoteAdvancesAndWakesAll(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        CoffinSleepWorldState worldState = CoffinSleepWorldState.capture(helper);
+        CoffinFixture firstCoffin = CoffinFixture.capture(helper, new BlockPos(2, 2, 3), Direction.NORTH);
+        CoffinFixture secondCoffin = CoffinFixture.capture(helper, new BlockPos(5, 2, 3), Direction.NORTH);
+        ServerPlayer firstPlayer = null;
+        ServerPlayer secondPlayer = null;
+        UUID firstPlayerId = null;
+        UUID secondPlayerId = null;
+        try {
+            worldState.prepare(helper);
+            firstCoffin.install(helper);
+            secondCoffin.install(helper);
+
+            firstPlayer = GameTestPlayers.spawnConnectedZombiePlayer(helper, ZombieForm.NORMAL, ZombieSize.ADULT);
+            firstPlayerId = firstPlayer.getUUID();
+            prepareCoffinPlayer(helper, firstPlayer, firstCoffin.footPos().west());
+
+            secondPlayer = GameTestPlayers.spawnConnectedZombiePlayer(helper, ZombieForm.NORMAL, ZombieSize.ADULT);
+            secondPlayerId = secondPlayer.getUUID();
+            prepareCoffinPlayer(helper, secondPlayer, secondCoffin.footPos().east());
+            assertConnectedPopulation(helper, firstPlayer, secondPlayer);
+
+            enterCoffin(helper, firstPlayer, firstCoffin, "first vote sleeper");
+            enterCoffin(helper, secondPlayer, secondCoffin, "second vote sleeper");
+            assertClockTicks(helper, worldState.clock(), COFFIN_TEST_DAY_CLOCK,
+                    "coffin interactions must not advance the day clock");
+
+            for (int tick = 0; tick < DEEP_SLEEP_TICKS - 1; tick++) {
+                firstPlayer.doTick();
+                secondPlayer.doTick();
+            }
+            assertActiveNap(helper, firstPlayer, firstCoffin, DEEP_SLEEP_TICKS - 1, "first vote sleeper");
+            assertActiveNap(helper, secondPlayer, secondCoffin, DEEP_SLEEP_TICKS - 1, "second vote sleeper");
+            assertClockTicks(helper, worldState.clock(), COFFIN_TEST_DAY_CLOCK,
+                    "the vote must not pass during the first 99 ticks");
+
+            firstPlayer.doTick();
+            helper.assertTrue(firstPlayer.getSleepTimer() == DEEP_SLEEP_TICKS,
+                    "the first vote sleeper should be deep after its 100th tick");
+            assertActiveNap(helper, secondPlayer, secondCoffin, DEEP_SLEEP_TICKS - 1, "second vote sleeper");
+            helper.assertTrue(firstPlayer.isSleeping() && CoffinNapManager.isNapping(firstPlayerId),
+                    "one deep sleeper must not pass a two-player 100% vote");
+            assertClockTicks(helper, worldState.clock(), COFFIN_TEST_DAY_CLOCK,
+                    "one deep sleeper must not advance the clock");
+
+            secondPlayer.doTick();
+            assertAwakeAfterNap(helper, firstPlayer, firstCoffin, "first vote sleeper");
+            assertAwakeAfterNap(helper, secondPlayer, secondCoffin, "second vote sleeper");
+            helper.assertTrue(level.clockManager().isAtTimeMarker(worldState.clock(), ClockTimeMarkers.NIGHT),
+                    "the completed coffin vote should advance the default clock to NIGHT");
+            helper.assertTrue(level.clockManager().getTotalTicks(worldState.clock()) != COFFIN_TEST_DAY_CLOCK,
+                    "the completed coffin vote should change the day clock");
+        } finally {
+            cleanupCoffinSleepTest(
+                    helper, worldState, firstCoffin, secondCoffin, firstPlayerId, secondPlayerId);
+        }
+        helper.succeed();
+    }
+
+    /**
+     * With two eligible connected zombies but only one sleeper, the vote remains short. Elapsed 300 is the inclusive
+     * keep-sleeping boundary; elapsed 301 takes the production timeout branch, wakes only the napper, and leaves the
+     * day clock unchanged.
+     */
+    static void coffinSleepTimeoutWakesWithoutSkip(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        CoffinSleepWorldState worldState = CoffinSleepWorldState.capture(helper);
+        CoffinFixture sleeperCoffin = CoffinFixture.capture(helper, new BlockPos(2, 2, 3), Direction.NORTH);
+        CoffinFixture holdoutCoffin = CoffinFixture.capture(helper, new BlockPos(5, 2, 3), Direction.NORTH);
+        ServerPlayer sleeper = null;
+        ServerPlayer holdout = null;
+        UUID sleeperId = null;
+        UUID holdoutId = null;
+        try {
+            worldState.prepare(helper);
+            sleeperCoffin.install(helper);
+            holdoutCoffin.install(helper);
+
+            sleeper = GameTestPlayers.spawnConnectedZombiePlayer(helper, ZombieForm.NORMAL, ZombieSize.ADULT);
+            sleeperId = sleeper.getUUID();
+            prepareCoffinPlayer(helper, sleeper, sleeperCoffin.footPos().west());
+
+            holdout = GameTestPlayers.spawnConnectedZombiePlayer(helper, ZombieForm.NORMAL, ZombieSize.ADULT);
+            holdoutId = holdout.getUUID();
+            prepareCoffinPlayer(helper, holdout, holdoutCoffin.footPos().east());
+            assertConnectedPopulation(helper, sleeper, holdout);
+            assertHoldoutAwake(helper, holdout, holdoutCoffin, "before the nap");
+
+            long napStart = level.getGameTime();
+            enterCoffin(helper, sleeper, sleeperCoffin, "timeout sleeper");
+            for (int tick = 0; tick < DEEP_SLEEP_TICKS; tick++) {
+                sleeper.doTick();
+            }
+            assertActiveNap(helper, sleeper, sleeperCoffin, DEEP_SLEEP_TICKS, "timeout sleeper at 100 ticks");
+            helper.assertTrue(sleeper.isSleepingLongEnough(),
+                    "the timeout sleeper should be deep after 100 explicit ticks");
+            assertHoldoutAwake(helper, holdout, holdoutCoffin, "after the sleeper reaches 100 ticks");
+            assertClockTicks(helper, worldState.clock(), COFFIN_TEST_DAY_CLOCK,
+                    "a one-of-two vote must not advance the clock");
+
+            setGameTime(level, napStart + 300L);
+            sleeper.doTick();
+            assertActiveNap(helper, sleeper, sleeperCoffin, DEEP_SLEEP_TICKS,
+                    "timeout sleeper at elapsed 300");
+            assertHoldoutAwake(helper, holdout, holdoutCoffin, "at elapsed 300");
+            assertClockTicks(helper, worldState.clock(), COFFIN_TEST_DAY_CLOCK,
+                    "elapsed 300 must not skip to night");
+
+            setGameTime(level, napStart + 301L);
+            sleeper.doTick();
+            assertAwakeAfterNap(helper, sleeper, sleeperCoffin, "timeout sleeper at elapsed 301");
+            assertHoldoutAwake(helper, holdout, holdoutCoffin, "at elapsed 301");
+            assertClockTicks(helper, worldState.clock(), COFFIN_TEST_DAY_CLOCK,
+                    "the elapsed-301 timeout must wake without a time skip");
+        } finally {
+            cleanupCoffinSleepTest(
+                    helper, worldState, sleeperCoffin, holdoutCoffin, sleeperId, holdoutId);
+        }
+        helper.succeed();
+    }
+
+    private static void prepareCoffinPlayer(GameTestHelper helper, ServerPlayer player, BlockPos standingPos) {
+        player.setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.CARVED_PUMPKIN));
+        player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+        player.setItemInHand(InteractionHand.OFF_HAND, ItemStack.EMPTY);
+        Vec3 position = Vec3.atBottomCenterOf(helper.absolutePos(standingPos));
+        player.snapTo(position.x, position.y, position.z, 0.0F, 0.0F);
+
+        helper.assertFalse(player.hasInfiniteMaterials(),
+                "connected coffin player must not retain infinite materials");
+        helper.assertTrue(player.getItemBySlot(EquipmentSlot.HEAD).is(Items.CARVED_PUMPKIN),
+                "connected coffin player must wear a carved pumpkin for sunlight isolation");
+        helper.assertFalse(CoffinNapManager.isNapping(player.getUUID()),
+                "fresh connected coffin player must not already have a nap entry");
+    }
+
+    private static void assertConnectedPopulation(
+            GameTestHelper helper, ServerPlayer firstPlayer, ServerPlayer secondPlayer) {
+        ServerLevel level = helper.getLevel();
+        helper.assertTrue(level.getServer().getPlayerList().getPlayer(firstPlayer.getUUID()) == firstPlayer,
+                "first connected coffin player must be in the PlayerList UUID map");
+        helper.assertTrue(level.getServer().getPlayerList().getPlayer(secondPlayer.getUUID()) == secondPlayer,
+                "second connected coffin player must be in the PlayerList UUID map");
+        helper.assertTrue(level.players().contains(firstPlayer) && level.players().contains(secondPlayer),
+                "both connected coffin players must be in ServerLevel.players");
+        helper.assertTrue(level.getServer().getPlayerList().getPlayersByUUID().size() == 2,
+                "coffin test must have exactly two connected players in the PlayerList UUID map");
+        helper.assertTrue(level.players().size() == 2,
+                "coffin test must have exactly two connected players in ServerLevel.players");
+    }
+
+    private static void enterCoffin(
+            GameTestHelper helper, ServerPlayer player, CoffinFixture coffin, String description) {
+        BlockHitResult hit = new BlockHitResult(
+                Vec3.atCenterOf(coffin.footAbs()), Direction.UP, coffin.footAbs(), false);
+        InteractionResult result = player.gameMode.useItemOn(
+                player, helper.getLevel(), player.getMainHandItem(), InteractionHand.MAIN_HAND, hit);
+
+        helper.assertTrue(result == InteractionResult.SUCCESS_SERVER,
+                description + " block interaction should return SUCCESS_SERVER");
+        helper.assertTrue(player.isSleeping(), description + " should enter the sleeping state");
+        helper.assertTrue(player.getSleepingPos().filter(coffin.headAbs()::equals).isPresent(),
+                description + " sleeping position should be the coffin head");
+        helper.assertTrue(CoffinNapManager.isNapping(player.getUUID()),
+                description + " should have an active CoffinNapManager entry");
+        coffin.assertOccupied(helper, description);
+    }
+
+    private static void assertActiveNap(
+            GameTestHelper helper,
+            ServerPlayer player,
+            CoffinFixture coffin,
+            int expectedSleepTimer,
+            String description) {
+        helper.assertTrue(player.isSleeping(), description + " should still be sleeping");
+        helper.assertTrue(player.getSleepingPos().filter(coffin.headAbs()::equals).isPresent(),
+                description + " should retain the coffin-head sleeping position");
+        helper.assertTrue(player.getSleepTimer() == expectedSleepTimer,
+                description + " should have sleepTimer=" + expectedSleepTimer
+                        + " (got " + player.getSleepTimer() + ")");
+        helper.assertTrue(CoffinNapManager.isNapping(player.getUUID()),
+                description + " should retain its CoffinNapManager entry");
+        coffin.assertOccupied(helper, description);
+    }
+
+    private static void assertAwakeAfterNap(
+            GameTestHelper helper, ServerPlayer player, CoffinFixture coffin, String description) {
+        helper.assertFalse(player.isSleeping(), description + " should be awake");
+        helper.assertTrue(player.getSleepingPos().isEmpty(),
+                description + " should have no sleeping position after waking");
+        helper.assertFalse(CoffinNapManager.isNapping(player.getUUID()),
+                description + " should have no CoffinNapManager entry after waking");
+        coffin.assertUnoccupied(helper, description);
+    }
+
+    private static void assertHoldoutAwake(
+            GameTestHelper helper, ServerPlayer holdout, CoffinFixture coffin, String checkpoint) {
+        helper.assertFalse(holdout.isSleeping(), "holdout must remain awake " + checkpoint);
+        helper.assertTrue(holdout.getSleepingPos().isEmpty(),
+                "holdout must have no sleeping position " + checkpoint);
+        helper.assertFalse(CoffinNapManager.isNapping(holdout.getUUID()),
+                "holdout must have no nap entry " + checkpoint);
+        coffin.assertUnoccupied(helper, "holdout " + checkpoint);
+    }
+
+    private static void assertClockTicks(
+            GameTestHelper helper, Holder<WorldClock> clock, long expectedTicks, String message) {
+        long actualTicks = helper.getLevel().clockManager().getTotalTicks(clock);
+        helper.assertTrue(actualTicks == expectedTicks,
+                message + " (expected " + expectedTicks + ", got " + actualTicks + ")");
+    }
+
+    private static void cleanupCoffinSleepTest(
+            GameTestHelper helper,
+            CoffinSleepWorldState worldState,
+            CoffinFixture firstCoffin,
+            CoffinFixture secondCoffin,
+            UUID firstPlayerId,
+            UUID secondPlayerId) {
+        ServerLevel level = helper.getLevel();
+        try {
+            try {
+                cleanupConnectedSleeper(helper, firstPlayerId);
+            } finally {
+                cleanupConnectedSleeper(helper, secondPlayerId);
+            }
+        } finally {
+            try {
+                if (firstPlayerId != null) {
+                    helper.assertFalse(CoffinNapManager.isNapping(firstPlayerId),
+                            "first coffin player's nap entry remained after disconnect");
+                }
+                if (secondPlayerId != null) {
+                    helper.assertFalse(CoffinNapManager.isNapping(secondPlayerId),
+                            "second coffin player's nap entry remained after disconnect");
+                }
+                firstCoffin.assertUnoccupiedIfPresent(helper, "first cleanup coffin");
+                secondCoffin.assertUnoccupiedIfPresent(helper, "second cleanup coffin");
+                helper.assertTrue(level.getServer().getPlayerList().getPlayersByUUID().isEmpty(),
+                        "PlayerList UUID map must be empty after coffin test cleanup");
+                helper.assertTrue(level.players().isEmpty(),
+                        "ServerLevel.players must be empty after coffin test cleanup");
+            } finally {
+                try {
+                    try {
+                        firstCoffin.restore(level);
+                    } finally {
+                        secondCoffin.restore(level);
+                    }
+                } finally {
+                    try {
+                        worldState.restore(level);
+                    } finally {
+                        firstCoffin.assertRestored(helper);
+                        secondCoffin.assertRestored(helper);
+                        worldState.assertRestored(helper);
+                    }
+                }
+            }
+        }
+    }
+
+    private static void cleanupConnectedSleeper(GameTestHelper helper, UUID playerId) {
+        if (playerId == null) {
+            return;
+        }
+        ServerLevel level = helper.getLevel();
+        ServerPlayer current = level.getServer().getPlayerList().getPlayer(playerId);
+        if (current == null) {
+            current = level.players().stream()
+                    .filter(player -> playerId.equals(player.getUUID()))
+                    .findFirst()
+                    .orElse(null);
+        }
+        try {
+            if (current != null && current.isSleeping()) {
+                current.stopSleeping();
+            }
+        } finally {
+            GameTestPlayers.disconnectConnectedPlayer(helper, playerId);
+        }
+    }
+
+    private static void setGameTime(ServerLevel level, long gameTime) {
+        level.getServer().getWorldData().overworldData().setGameTime(gameTime);
+    }
+
+    private record CoffinSleepWorldState(
+            Holder<WorldClock> clock,
+            long clockTicks,
+            long gameTime,
+            int sleepingPercentage,
+            boolean advanceTime) {
+
+        static CoffinSleepWorldState capture(GameTestHelper helper) {
+            ServerLevel level = helper.getLevel();
+            helper.assertTrue(level == level.getServer().overworld(),
+                    "coffin lifecycle GameTests require the server Overworld");
+            Holder<WorldClock> clock = level.dimensionType().defaultClock()
+                    .orElseThrow(() -> new IllegalStateException(
+                            "coffin lifecycle GameTests require a dimension default clock"));
+            return new CoffinSleepWorldState(
+                    clock,
+                    level.clockManager().getTotalTicks(clock),
+                    level.getGameTime(),
+                    level.getGameRules().get(GameRules.PLAYERS_SLEEPING_PERCENTAGE),
+                    level.getGameRules().get(GameRules.ADVANCE_TIME));
+        }
+
+        void prepare(GameTestHelper helper) {
+            ServerLevel level = helper.getLevel();
+            level.getGameRules().set(GameRules.PLAYERS_SLEEPING_PERCENTAGE, 100, level.getServer());
+            level.getGameRules().set(GameRules.ADVANCE_TIME, true, level.getServer());
+            level.clockManager().setTotalTicks(clock, COFFIN_TEST_DAY_CLOCK);
+
+            helper.assertTrue(level.getGameTime() == gameTime,
+                    "coffin lifecycle setup must not change gameTime");
+            assertClockTicks(helper, clock, COFFIN_TEST_DAY_CLOCK,
+                    "coffin lifecycle test clock should begin at daytime tick 1000");
+            helper.assertTrue(level.getGameRules().get(GameRules.PLAYERS_SLEEPING_PERCENTAGE) == 100,
+                    "coffin lifecycle test requires players_sleeping_percentage=100");
+            helper.assertTrue(level.getGameRules().get(GameRules.ADVANCE_TIME),
+                    "coffin lifecycle test requires advance_time=true");
+        }
+
+        void restore(ServerLevel level) {
+            try {
+                setGameTime(level, gameTime);
+            } finally {
+                try {
+                    level.clockManager().setTotalTicks(clock, clockTicks);
+                } finally {
+                    try {
+                        level.getGameRules().set(
+                                GameRules.PLAYERS_SLEEPING_PERCENTAGE, sleepingPercentage, level.getServer());
+                    } finally {
+                        level.getGameRules().set(GameRules.ADVANCE_TIME, advanceTime, level.getServer());
+                    }
+                }
+            }
+        }
+
+        void assertRestored(GameTestHelper helper) {
+            ServerLevel level = helper.getLevel();
+            helper.assertTrue(level.getGameTime() == gameTime,
+                    "coffin cleanup must restore the original gameTime");
+            assertClockTicks(helper, clock, clockTicks,
+                    "coffin cleanup must restore the original default-clock ticks");
+            helper.assertTrue(
+                    level.getGameRules().get(GameRules.PLAYERS_SLEEPING_PERCENTAGE) == sleepingPercentage,
+                    "coffin cleanup must restore players_sleeping_percentage");
+            helper.assertTrue(level.getGameRules().get(GameRules.ADVANCE_TIME) == advanceTime,
+                    "coffin cleanup must restore advance_time");
+        }
+    }
+
+    private record CoffinFixture(
+            BlockPos footPos,
+            BlockPos headPos,
+            BlockPos footAbs,
+            BlockPos headAbs,
+            Direction facing,
+            BlockState originalFoot,
+            BlockState originalHead) {
+
+        static CoffinFixture capture(GameTestHelper helper, BlockPos footPos, Direction facing) {
+            BlockPos headPos = footPos.relative(facing);
+            BlockPos footAbs = helper.absolutePos(footPos);
+            BlockPos headAbs = helper.absolutePos(headPos);
+            return new CoffinFixture(
+                    footPos,
+                    headPos,
+                    footAbs,
+                    headAbs,
+                    facing,
+                    helper.getLevel().getBlockState(footAbs),
+                    helper.getLevel().getBlockState(headAbs));
+        }
+
+        void install(GameTestHelper helper) {
+            Block coffin = IAmZombieBlocks.COFFIN.get();
+            helper.setBlock(footPos, coffin.defaultBlockState()
+                    .setValue(HorizontalDirectionalBlock.FACING, facing)
+                    .setValue(CoffinBlock.PART, BedPart.FOOT)
+                    .setValue(CoffinBlock.OCCUPIED, false));
+            helper.setBlock(headPos, coffin.defaultBlockState()
+                    .setValue(HorizontalDirectionalBlock.FACING, facing)
+                    .setValue(CoffinBlock.PART, BedPart.HEAD)
+                    .setValue(CoffinBlock.OCCUPIED, false));
+            helper.assertTrue(helper.getBlockState(footPos).is(coffin),
+                    "coffin fixture foot should be installed");
+            helper.assertTrue(helper.getBlockState(headPos).is(coffin),
+                    "coffin fixture head should be installed");
+            assertUnoccupied(helper, "fresh coffin fixture");
+        }
+
+        void assertOccupied(GameTestHelper helper, String description) {
+            BlockState state = helper.getLevel().getBlockState(headAbs);
+            helper.assertTrue(state.is(IAmZombieBlocks.COFFIN.get())
+                            && state.getValue(CoffinBlock.OCCUPIED),
+                    description + " coffin head should be occupied");
+        }
+
+        void assertUnoccupied(GameTestHelper helper, String description) {
+            BlockState state = helper.getLevel().getBlockState(headAbs);
+            helper.assertTrue(state.is(IAmZombieBlocks.COFFIN.get())
+                            && !state.getValue(CoffinBlock.OCCUPIED),
+                    description + " coffin head should be unoccupied");
+        }
+
+        void assertUnoccupiedIfPresent(GameTestHelper helper, String description) {
+            BlockState state = helper.getLevel().getBlockState(headAbs);
+            if (state.is(IAmZombieBlocks.COFFIN.get())) {
+                helper.assertFalse(state.getValue(CoffinBlock.OCCUPIED),
+                        description + " head remained occupied during cleanup");
+            }
+        }
+
+        void restore(ServerLevel level) {
+            try {
+                level.setBlock(footAbs, originalFoot, 3);
+            } finally {
+                level.setBlock(headAbs, originalHead, 3);
+            }
+        }
+
+        void assertRestored(GameTestHelper helper) {
+            helper.assertTrue(helper.getLevel().getBlockState(footAbs).equals(originalFoot),
+                    "coffin cleanup must restore the original foot block state");
+            helper.assertTrue(helper.getLevel().getBlockState(headAbs).equals(originalHead),
+                    "coffin cleanup must restore the original head block state");
+        }
     }
 
     // ---------------------------------------------------------------------------------------------------------
@@ -300,7 +744,7 @@ final class IAmZombieMobSleepGameTestBodies {
     }
 
     /**
-     * MOB-GRUDGE (Fix1, vanilla-faithful self-refresh): a monster the player GENUINELY struck stays ALLOWED to target
+     * A monster the player genuinely struck stays allowed to target
      * the zombie player for as long as it remains ENGAGED -- the grudge SELF-REFRESHES on every onChangeTarget
      * re-assert while it is still live (record gate {@code trueHit || grudged}), so it persists past vanilla's ~100t
      * lastHurtByMob clear INDEFINITELY while the mob keeps the target. Once the mob LOSES the player (the seam stops
@@ -318,10 +762,11 @@ final class IAmZombieMobSleepGameTestBodies {
         // posts the real onLivingChangeTarget), NOT the skeleton's own AI, so NoAi (no wandering) + a stone floor (no
         // void-fall) + setInvulnerable (no daylight burn -- over the ~660t/33s window an un-armored skeleton would
         // otherwise burn to death; this mob only CARRIES the target flag, no logic depends on it taking damage) make
-        // the long window deterministic. setInvulnerable also suppresses vanilla's ~100t lastHurtByMob auto-clear,
-        // which is exactly why each engaged step below nulls lastHurtByMob EXPLICITLY instead of relying on that timer.
-        // The ONLY seam posts are this test's explicit clearedTarget() calls -> the refresh schedule is fully
-        // test-controlled (no AI re-post can perturb the timing).
+        // the long window deterministic. Vanilla's ~100t lastHurtByMob auto-clear does NOT fire for this fixture -- it
+        // lives in the mob's AI step, which does not run for a NoAi mob (and, as the piglin-swarm work found, does not
+        // reliably run for gametest mobs at all) -- which is exactly why each engaged step below nulls lastHurtByMob
+        // EXPLICITLY instead of relying on that timer. The ONLY seam posts are this test's explicit clearedTarget()
+        // calls -> the refresh schedule is fully test-controlled (no AI re-post can perturb the timing).
         helper.setBlock(new BlockPos(2, 1, 2), Blocks.STONE);
         Skeleton skeleton = helper.spawn(EntityTypes.SKELETON, new BlockPos(2, 2, 2));
         skeleton.setNoAi(true);
@@ -329,7 +774,7 @@ final class IAmZombieMobSleepGameTestBodies {
 
         // t0: a genuine hit. Posting now (trueHit==true) SEEDS the player-grudge (expiry t0+200) and is ALLOWED.
         skeleton.setLastHurtByMob(player);
-        if (clearedTarget(skeleton, player)) {
+        if (GameTestSeams.targetDenied(skeleton, player)) {
             helper.fail("a freshly-struck IGNORED monster (retaliating) must be ALLOWED to target the zombie player at t0");
             return;
         }
@@ -346,7 +791,7 @@ final class IAmZombieMobSleepGameTestBodies {
                 return;
             }
             skeleton.setLastHurtByMob(null);               // trueHit=false: only the self-refreshing grudge remains
-            if (clearedTarget(skeleton, player)) {
+            if (GameTestSeams.targetDenied(skeleton, player)) {
                 helper.fail("while engaged (+120t, lastHurtByMob cleared), the self-refreshing grudge must keep the monster ALLOWED to target the player");
                 return;
             }
@@ -356,7 +801,7 @@ final class IAmZombieMobSleepGameTestBodies {
                     return;
                 }
                 skeleton.setLastHurtByMob(null);
-                if (clearedTarget(skeleton, player)) {
+                if (GameTestSeams.targetDenied(skeleton, player)) {
                     helper.fail("while engaged (+240t), the self-refreshing grudge must keep the monster ALLOWED to target the player");
                     return;
                 }
@@ -366,7 +811,7 @@ final class IAmZombieMobSleepGameTestBodies {
                         return;
                     }
                     skeleton.setLastHurtByMob(null);
-                    if (clearedTarget(skeleton, player)) {
+                    if (GameTestSeams.targetDenied(skeleton, player)) {
                         helper.fail("while engaged (+360t), the self-refreshing grudge must keep the monster ALLOWED to target the player");
                         return;
                     }
@@ -380,7 +825,7 @@ final class IAmZombieMobSleepGameTestBodies {
                             return;
                         }
                         skeleton.setLastHurtByMob(null);
-                        if (!clearedTarget(skeleton, player)) {
+                        if (!GameTestSeams.targetDenied(skeleton, player)) {
                             helper.fail("after the mob loses the player (no re-post for GRUDGE_TICKS), the forgiven grudge must let the IGNORED deny-list CLEAR the target again");
                             return;
                         }
@@ -389,5 +834,55 @@ final class IAmZombieMobSleepGameTestBodies {
                 });
             });
         });
+    }
+
+    /**
+     * A zombified piglin group-angered at the zombie player is allowed to
+     * target it -- the mechanism that restores the vanilla pack swarm. Driven seam-style (NOT via mob AI): this headless
+     * harness does not run mob target-goals against a FakePlayer (a hit piglin never actually retaliates here), so the
+     * end-to-end "piglin A retaliates -> alerts B" chain cannot be gametested; instead this proves the exact logic the
+     * HurtByTargetGoalAlertMixin depends on. (1) An IDLE piglin's target to the player is DENIED -- the strand the bug
+     * leaves the alerted pack in; the guard wouldDenyZombiePlayerTarget agrees it would be stranded, so the
+     * mixin WOULD pre-anger it). (2) After establishing persistent anger EXACTLY as the mixin does on a group alert,
+     * the SAME seam is ALLOWED (angeredNeutral) -- the piglin swarms instead of being nulled. (3) An iron golem (a
+     * table attacker, never stranded) is skipped by the guard -- the fix pre-angers only the kin that need it. The
+     * mixin APPLYING is separately confirmed by the gametest server booting under defaultRequire:1 (a wrong @Inject
+     * target would crash startup); the in-world swarm is verified by review + manual play.
+     */
+    static void mobPiglinAngeredKinAllowed(GameTestHelper helper) {
+        FakePlayer player = GameTestPlayers.spawnZombieFakePlayer(helper, ZombieForm.ZOMBIFIED_PIGLIN, ZombieSize.ADULT);
+        ServerLevel level = helper.getLevel();
+
+        ZombifiedPiglin kin = helper.spawn(EntityTypes.ZOMBIFIED_PIGLIN, new BlockPos(2, 2, 2));
+
+        // (1) Baseline: an idle, un-hit, un-angered IGNORED piglin targeting the zombie player is DENIED -- exactly the
+        // stranded state the group alert leaves the pack in. The guard must flag it as one to rescue.
+        if (!GameTestSeams.targetDenied(kin, player)) {
+            helper.fail("baseline: an idle IGNORED zombified piglin must be DENIED targeting the zombie player");
+            return;
+        }
+        if (!ZombieMobTargetingEvents.wouldDenyZombiePlayerTarget(kin, player)) {
+            helper.fail("Fix A guard: an idle zombified piglin must be flagged as a kin the deny-list would strand");
+            return;
+        }
+
+        // (2) Do EXACTLY what HurtByTargetGoalAlertMixin does on a group alert: establish persistent anger at the player.
+        kin.setPersistentAngerTarget(EntityReference.of(player));
+        kin.startPersistentAngerTimer();
+
+        // ... now the SAME seam must be ALLOWED: the group-angered piglin swarms instead of being nulled.
+        if (GameTestSeams.targetDenied(kin, player)) {
+            helper.fail("after group anger (Fix A), the zombified piglin must be ALLOWED to target the zombie player (swarm)");
+            return;
+        }
+
+        // (3) Guard precision: an iron golem attacks every form, so the deny-list never strands it -> the mixin must
+        // NOT needlessly pre-anger it.
+        IronGolem golem = helper.spawn(EntityTypes.IRON_GOLEM, new BlockPos(1, 2, 3));
+        if (ZombieMobTargetingEvents.wouldDenyZombiePlayerTarget(golem, player)) {
+            helper.fail("Fix A guard precision: an iron golem (table attacker) must NOT be flagged for pre-anger");
+            return;
+        }
+        helper.succeed();
     }
 }

@@ -17,7 +17,7 @@ class ItemStackMixinSourceTest {
         assertTrue(source.contains("hurtAndBreak"), "mixin should intercept item durability damage");
         assertTrue(source.contains("ItemTags.PIGLIN_LOVED"), "gold-like piglin-loved items should be targeted");
         assertTrue(source.contains("ZombieForm.ZOMBIFIED_PIGLIN"), "only zombified piglin form should reduce gold durability");
-        assertTrue(source.contains("goldDurabilityConsumptionMultiplier"), "rule-layer multiplier should control the reduction");
+        assertTrue(source.contains("ZombieBalanceRules.scaledDurabilityDamage("), "rule-layer scaled-durability roll should control the reduction");
         assertTrue(source.contains("int originalAmount"), "ModifyVariable handler should include the original amount arg expected by runtime mixin validation");
     }
 }

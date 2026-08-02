@@ -1,33 +1,27 @@
 package dev.molang.iamzombieq.api.extension;
 import dev.molang.iamzombieq.rules.food.FoodRule;
+import dev.molang.iamzombieq.util.SourceScan;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 
 import org.junit.jupiter.api.Test;
 
 /**
- * Source-scan tests for the extension registry and its hooks (the repo's test source set has Minecraft types on
- * the classpath name-only but not loadable, so a hook lambda — whose signature names {@code ServerPlayer}/
- * {@code ItemStack} — cannot be constructed in a test; we assert structure via source scan instead). Verifies the
- * neutral-when-empty default and the first-non-null-wins contract the food handler depends on.
+ * Source-shape guards for the extension registry contract and hook declarations. These tests read production source
+ * text only: they do not load or initialize {@code IZombieExtensions}, and they do not claim to execute its registry.
  */
 class IZombieExtensionsTest {
 
-    private static final String EXT_DIR = "src/main/java/dev/molang/iamzombieq/api/extension/";
-
-    private static String read(String file) throws IOException {
-        return Files.readString(Path.of(EXT_DIR + file));
-    }
+    private static final String EXT_DIR = "dev/molang/iamzombieq/api/extension/";
 
     @Test
     void providerListsAreInitializedEmptyWithNoStaticBlockOrRegisterCall() throws IOException {
-        String src = read("IZombieExtensions.java");
-        // PLAN A2: CopyOnWriteArrayList initialized EMPTY, no static block, no self-registration inside the class.
+        String src = SourceScan.mainJava(EXT_DIR + "IZombieExtensions.java");
+        // CopyOnWriteArrayList starts empty, with no static block or self-registration inside the class.
         assertTrue(src.contains("new CopyOnWriteArrayList<>()"), "lists must be initialized empty");
         assertTrue(src.contains("CopyOnWriteArrayList<IFoodRuleProvider> FOOD")
                         && src.contains("CopyOnWriteArrayList<IAttackerHook> ATTACKER"),
@@ -39,16 +33,50 @@ class IZombieExtensionsTest {
     }
 
     @Test
-    void accessorsAreInternalAndExposeTheRegisteredLists() throws IOException {
-        String src = read("IZombieExtensions.java");
-        assertTrue(src.contains("@ApiStatus.Internal"), "the accessor methods should be marked internal");
-        assertTrue(src.contains("List<IFoodRuleProvider> foodRuleProviders()"), "food providers accessor should exist");
-        assertTrue(src.contains("List<IAttackerHook> attackerHooks()"), "attacker hooks accessor should exist");
+    void accessorsAreEachDirectlyInternalLibrarySeams() throws IOException {
+        String src = SourceScan.mainJava(EXT_DIR + "IZombieExtensions.java");
+        assertDirectInternalAccessor(src,
+                "public static List<IFoodRuleProvider> foodRuleProviders()",
+                "food providers");
+        assertDirectInternalAccessor(src,
+                "public static List<IAttackerHook> attackerHooks()",
+                "attacker hooks");
+    }
+
+    @Test
+    void sourceShapeDocumentsSupportedRegistrationAndSetupOnlyLifecycle() throws IOException {
+        String src = SourceScan.mainJava(EXT_DIR + "IZombieExtensions.java");
+        String contract = src.replaceAll("(?m)^\\s*\\* ?", " ").replaceAll("\\s+", " ");
+        assertSupportedRegisterEntryPoint(src,
+                "public static void register(@NotNull IFoodRuleProvider provider)",
+                "food provider");
+        assertSupportedRegisterEntryPoint(src,
+                "public static void register(@NotNull IAttackerHook hook)",
+                "attacker hook");
+
+        assertTrue(contract.contains("setup-only") && contract.contains("process/classloader scoped"),
+                "the registry contract should define setup-only, process/classloader-scoped registration");
+        assertTrue(contract.contains("World, server, datapack, and config reloads do not unload mods"),
+                "reload and logical-server lifecycle must not be confused with mod unload");
+        assertTrue(contract.contains("does not support runtime unregister"),
+                "the contract should explicitly decline runtime unregister");
+        assertTrue(contract.contains("actual registration completion order")
+                        && contract.contains("Parallel addon setup does not guarantee cross-addon order"),
+                "food ordering and parallel-setup limits should be explicit");
+        assertTrue(contract.contains("Duplicate registrations participate repeatedly"),
+                "duplicate registration should be documented without changing its behavior");
+        assertTrue(contract.contains("Passing null violates this contract")
+                        && contract.contains("does not specify a particular failure point"),
+                "null should be contract-invalid without promising fail-fast behavior");
+        assertTrue(contract.contains("STABLE contract does not include")
+                        && contract.contains("@Internal accessors")
+                        && contract.contains("Experimental attacker API"),
+                "class-level STABLE scope should exclude Internal and Experimental members");
     }
 
     @Test
     void foodRuleProviderDefersWithNullAndReturnsAFoodRuleOtherwise() throws IOException {
-        String src = read("IFoodRuleProvider.java");
+        String src = SourceScan.mainJava(EXT_DIR + "IFoodRuleProvider.java");
         // Contract: @Nullable FoodRule ruleForStack(ServerPlayer, ItemStack, String); null => defer to built-in.
         assertTrue(src.contains("@Nullable"), "the provider should be able to return null to defer");
         assertTrue(src.contains("FoodRule ruleForStack(") && src.contains("ServerPlayer eater")
@@ -60,8 +88,8 @@ class IZombieExtensionsTest {
 
     @Test
     void attackerHookReturnsAttackerDecisionEnumIsExperimentalAndShipsForFutureUse() throws IOException {
-        String src = read("IAttackerHook.java");
-        // FIX 7: the hook returns the AttackerDecision enum (was @Nullable Boolean) and is @Experimental.
+        String src = SourceScan.mainJava(EXT_DIR + "IAttackerHook.java");
+        // The hook returns the AttackerDecision enum (was @Nullable Boolean) and is @Experimental.
         assertTrue(src.contains("AttackerDecision shouldAttack("),
                 "the attacker hook should return the AttackerDecision enum");
         assertTrue(src.contains("@ApiStatus.Experimental"),
@@ -69,9 +97,46 @@ class IZombieExtensionsTest {
         assertTrue(src.contains("DEFERRED") || src.contains("deferred") || src.contains("not yet wired"),
                 "the attacker hook should document that its wiring is deferred in Phase-1");
         // The DEFAULT enum value is the explicit "no opinion / defer" replacement for the old null return.
-        String decision = read("AttackerDecision.java");
+        String decision = SourceScan.mainJava(EXT_DIR + "AttackerDecision.java");
         assertTrue(decision.contains("DEFAULT") && decision.contains("FORCE_TARGET")
                         && decision.contains("ALLOW_IF_PROVOKED") && decision.contains("IGNORE"),
                 "the AttackerDecision enum should declare FORCE_TARGET/ALLOW_IF_PROVOKED/IGNORE/DEFAULT");
+    }
+
+    private static void assertDirectInternalAccessor(String source, String signature, String label) {
+        String declaration = declarationPrefix(source, signature);
+        int javadocEnd = declaration.lastIndexOf("*/");
+        assertTrue(javadocEnd >= 0, label + " accessor should have a complete Javadoc block");
+        String directAnnotations = declaration.substring(javadocEnd + 2);
+        assertEquals(1, SourceScan.countOccurrences(directAnnotations, "@ApiStatus.Internal"),
+                label + " accessor should directly carry exactly one @ApiStatus.Internal");
+        String contract = normalizedDeclaration(source, signature);
+        assertTrue(contract.contains("Library-internal consumption seam")
+                        && contract.contains("Addons must not call")
+                        && contract.contains("modify the returned list")
+                        && contract.contains("retain its reference")
+                        && contract.contains("depend on its implementation type"),
+                label + " accessor should document the unsupported external seam contract");
+    }
+
+    private static void assertSupportedRegisterEntryPoint(String source, String signature, String label) {
+        String declaration = normalizedDeclaration(source, signature);
+        assertTrue(declaration.contains("Supported addon entry point"),
+                label + " register overload should be documented as supported addon API");
+    }
+
+    private static String declarationPrefix(String source, String signature) {
+        int signatureStart = source.indexOf(signature);
+        assertTrue(signatureStart >= 0, "method signature should exist: " + signature);
+        int javadocStart = source.lastIndexOf("\n    /**", signatureStart);
+        assertTrue(javadocStart >= 0, "method should have directly preceding Javadoc: " + signature);
+        return source.substring(javadocStart, signatureStart);
+    }
+
+    private static String normalizedDeclaration(String source, String signature) {
+        return declarationPrefix(source, signature)
+                .replace("*", "")
+                .replaceAll("\\s+", " ")
+                .trim();
     }
 }

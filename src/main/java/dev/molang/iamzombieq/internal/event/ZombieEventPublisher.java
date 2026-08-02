@@ -1,13 +1,13 @@
 package dev.molang.iamzombieq.internal.event;
 
 import dev.molang.iamzombieq.IAmZombieMod;
-import dev.molang.iamzombieq.platform.Services;
 import net.neoforged.bus.api.Event;
 import net.neoforged.bus.api.ICancellableEvent;
+import net.neoforged.neoforge.common.NeoForge;
 import org.jetbrains.annotations.ApiStatus;
 
 /**
- * Central, isolation-wrapped publisher for the mod's lifecycle events (PLAN A4 / design §8.2). EVERY event post —
+ * Central, isolation-wrapped publisher for the mod's lifecycle events. Every event post,
  * from both the internal facade and the handler POST-fires — goes through here so a misbehaving (future) addon
  * listener cannot crash a gameplay handler or interrupt a player's evolution.
  *
@@ -27,7 +27,7 @@ public final class ZombieEventPublisher {
     /** Posts an observer event, isolating any listener {@link Exception} (Errors propagate); never rethrows. */
     public static void post(Event event) {
         try {
-            Services.EVENTS.post(event);
+            NeoForge.EVENT_BUS.post(event);
         } catch (Exception e) {
             IAmZombieMod.LOGGER.error("A zombie event listener threw while handling {}", event.getClass().getName(), e);
         }
@@ -42,7 +42,8 @@ public final class ZombieEventPublisher {
      */
     public static <T extends Event & ICancellableEvent> boolean postCancelable(T event) {
         try {
-            return Services.EVENTS.postCancelable(event);
+            NeoForge.EVENT_BUS.post(event);
+            return event.isCanceled();
         } catch (Exception e) {
             IAmZombieMod.LOGGER.error("A zombie event listener threw while handling {}", event.getClass().getName(), e);
             return event.isCanceled();

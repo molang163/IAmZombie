@@ -1,5 +1,7 @@
 package dev.molang.iamzombieq.gameplay;
 
+import java.util.Arrays;
+
 import dev.molang.iamzombieq.IAmZombieMod;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.Difficulty;
@@ -28,6 +30,12 @@ public final class PeacefulGuard {
     /** The shared "is this the forbidden difficulty?" predicate (used by the command rejection and the chokepoint). */
     public static boolean isForbidden(Difficulty difficulty) {
         return difficulty == Difficulty.PEACEFUL;
+    }
+
+    public static Difficulty[] selectableDifficulties() {
+        return Arrays.stream(Difficulty.values())
+                .filter(difficulty -> !isForbidden(difficulty))
+                .toArray(Difficulty[]::new);
     }
 
     /** The single coercion: Peaceful becomes {@link #FALLBACK}; any other difficulty is returned unchanged. */

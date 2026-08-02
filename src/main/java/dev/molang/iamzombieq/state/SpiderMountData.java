@@ -4,7 +4,7 @@ import dev.molang.iamzombieq.rules.mount.ZombieMountRules;
 import java.util.UUID;
 
 /**
- * Per-spider mount state: the owner UUID (blank = none) and the accumulated taming progress (B1).
+ * Per-spider mount state: the owner UUID (blank = none) and the accumulated taming progress.
  *
  * <p>Backward compatibility: the original single-arg form {@code new SpiderMountData(ownerUuid)} is kept as a
  * compatibility constructor. An owned spider loaded from old saves (which had no progress field) is treated as

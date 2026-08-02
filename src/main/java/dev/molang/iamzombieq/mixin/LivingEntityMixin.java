@@ -2,7 +2,7 @@ package dev.molang.iamzombieq.mixin;
 
 import java.util.Optional;
 
-import dev.molang.iamzombieq.IAmZombieConfig;
+import dev.molang.iamzombieq.IAmZombieServerConfig;
 import dev.molang.iamzombieq.rules.mount.MountKind;
 import dev.molang.iamzombieq.rules.mount.ZombieMountRules;
 import dev.molang.iamzombieq.rules.ZombiePotionRules;
@@ -48,10 +48,13 @@ abstract class LivingEntityMixin {
 
     @Inject(method = "getRiddenSpeed", at = @At("HEAD"), cancellable = true)
     private void iamzombieq$modMountRiddenSpeed(Player controller, CallbackInfoReturnable<Float> callback) {
-        // B3: spider/chicken/big-zombie ridden speed is resolved by the MountCapability (spider keeps its
+        if (((LivingEntity) (Object) this).level().isClientSide()) {
+            return;
+        }
+        // Spider, chicken, and big-zombie ridden speed is resolved by MountCapability (the spider keeps its
         // config override; the others use the ZombieMountRules table).
         iamzombieq$controlledCapability(controller).ifPresent(capability -> callback.setReturnValue(
-                capability.riddenSpeed(ZombieMountRules.spiderRiddenSpeed(IAmZombieConfig.SPIDER_MOUNT_SPEED.get().floatValue()))));
+                capability.riddenSpeed(ZombieMountRules.spiderRiddenSpeed(IAmZombieServerConfig.SPIDER_MOUNT_SPEED.get().floatValue()))));
     }
 
     // Mount faces where the rider looks. LivingEntity#tickRidden (line ~2756) is the empty default; injecting

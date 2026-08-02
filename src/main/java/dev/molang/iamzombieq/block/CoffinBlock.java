@@ -3,11 +3,13 @@ package dev.molang.iamzombieq.block;
 import com.mojang.serialization.MapCodec;
 import dev.molang.iamzombieq.gameplay.CoffinNapManager;
 import dev.molang.iamzombieq.gameplay.IAmZombieAdvancements;
+import dev.molang.iamzombieq.gameplay.ZombieMobTargetingAdapter;
 import dev.molang.iamzombieq.rules.sleep.SleepAction;
 import dev.molang.iamzombieq.rules.core.ZombieForm;
 import dev.molang.iamzombieq.rules.ZombieMobTargetingRules;
 import dev.molang.iamzombieq.rules.sleep.ZombieSleepRules;
 import dev.molang.iamzombieq.state.IAmZombieAttachments;
+import dev.molang.iamzombieq.util.ZombiePlayerGates;
 import java.util.Optional;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -97,11 +99,11 @@ public class CoffinBlock extends HorizontalDirectionalBlock {
         SleepAction action = ZombieSleepRules.useCoffin(isZombiePlayer(serverPlayer), hasHostileNearby(serverLevel, serverPlayer, headPos), canRestToNight(serverLevel));
         return switch (action) {
             case DENY_NOT_ZOMBIE -> {
-                serverPlayer.sendOverlayMessage(Component.translatable("iamzombieq.message.coffin.zombie_only"));
+                serverPlayer.sendOverlayMessage(Component.translatable(ZombieSleepRules.coffinMessageKey(action, false)));
                 yield InteractionResult.SUCCESS_SERVER;
             }
             case DENY_HOSTILE_NEARBY -> {
-                serverPlayer.sendOverlayMessage(Component.translatable("iamzombieq.message.coffin.not_safe"));
+                serverPlayer.sendOverlayMessage(Component.translatable(ZombieSleepRules.coffinMessageKey(action, false)));
                 yield InteractionResult.SUCCESS_SERVER;
             }
             case REST_UNTIL_NIGHT -> {
@@ -109,23 +111,22 @@ public class CoffinBlock extends HorizontalDirectionalBlock {
                 // Enter a real, multi-tick sleep: register the nap and let CoffinNapManager drive it (count the
                 // deep-sleep timer, run the per-dimension vote, and advance the clock to night once enough zombies
                 // have slept long enough). The time skip no longer happens instantly on right-click.
-                if (CoffinNapManager.beginNap(serverLevel, serverPlayer, headPos)) {
-                    serverPlayer.sendOverlayMessage(Component.translatable("iamzombieq.message.coffin.lying_down"));
-                } else {
+                boolean napBegan = CoffinNapManager.beginNap(serverLevel, serverPlayer, headPos);
+                if (!napBegan) {
                     // Mounted / already sleeping / cannot lie down: fall back to just setting the respawn point.
                     setCoffinRespawn(serverLevel, serverPlayer, headPos);
-                    serverPlayer.sendOverlayMessage(Component.translatable("iamzombieq.message.coffin.respawn_set_only"));
                 }
+                serverPlayer.sendOverlayMessage(Component.translatable(ZombieSleepRules.coffinMessageKey(action, napBegan)));
                 yield InteractionResult.SUCCESS_SERVER;
             }
             case SET_RESPAWN -> {
-                // Night / no day-night clock: behave like a vanilla bed and only set the respawn point.
+                // Night / no day-night clock: behave like a vanilla bed and only set the respawn point. The neutral
+                // "respawn saved" line (respawn_set) -- NOT respawn_set_only, whose "but night never came" is false here
+                // -- is routed via ZombieSleepRules.coffinMessageKey (unit-tested).
                 IAmZombieAdvancements.award(serverPlayer, IAmZombieAdvancements.COFFIN);
                 setCoffinRespawn(serverLevel, serverPlayer, headPos);
                 serverLevel.playSound(null, headPos, SoundEvents.RESPAWN_ANCHOR_SET_SPAWN, SoundSource.BLOCKS, 1.0F, 1.0F);
-                // Night (or a clockless dimension): night has already arrived / there is no night to wait for, so use
-                // the neutral "respawn saved" line -- NOT respawn_set_only, whose "but night never came" is false here.
-                serverPlayer.sendOverlayMessage(Component.translatable("iamzombieq.message.coffin.respawn_set"));
+                serverPlayer.sendOverlayMessage(Component.translatable(ZombieSleepRules.coffinMessageKey(action, false)));
                 yield InteractionResult.SUCCESS_SERVER;
             }
             case PASS_THROUGH, BED_EXPLODES -> InteractionResult.PASS;
@@ -233,7 +234,7 @@ public class CoffinBlock extends HorizontalDirectionalBlock {
     }
 
     private static boolean isZombiePlayer(ServerPlayer player) {
-        return !player.isSpectator();
+        return ZombiePlayerGates.isZombiePlayer(player);
     }
 
     // A zombie isn't scared of fellow undead — only of the creatures that PROACTIVELY attack the zombie player
@@ -259,7 +260,7 @@ public class CoffinBlock extends HorizontalDirectionalBlock {
             if (isFriendlyGolem(mob)) {
                 return false;
             }
-            ZombieMobTargetingRules.MobKind kind = ZombieMobTargetingRules.classify(mob);
+            ZombieMobTargetingRules.MobKind kind = ZombieMobTargetingAdapter.classify(mob);
             return blocksCoffinSleep(kind) && ZombieMobTargetingRules.attacksZombiePlayer(kind, form);
         }).isEmpty();
     }

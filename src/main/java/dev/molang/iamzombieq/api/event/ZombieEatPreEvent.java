@@ -8,13 +8,13 @@ import net.neoforged.bus.api.ICancellableEvent;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * Cancellable event fired BEFORE a zombie player's food is resolved/applied (design §5.a), carrying the eaten
+ * Cancellable event fired before a zombie player's food is resolved and applied, carrying the eaten
  * item and the resolved {@link FoodRule}. Cancel it to veto the zombie-food handling.
  *
  * <p>Posted on the native {@code NeoForge.EVENT_BUS}; subscribe with {@code @SubscribeEvent}. The eaten stack is
  * kept as an immutable snapshot ({@link ItemStack#copy()}), so listeners cannot mutate the live stack through it.
  *
- * <p>NOTE (Phase-1): fired by the food handler from the item-eat path ({@code onItemUseFinished}) BEFORE the
+ * <p>Fired by the food handler from the item-eat path ({@code onItemUseFinished}) before the
  * zombie-food effects apply; cancelling it skips the whole zombie-food handling for that eat. (The cake block-eat
  * path, which has no clean {@code ItemStack}, does not fire it.) Per-item food-rule extension is additionally
  * provided via {@code IFoodRuleProvider}.

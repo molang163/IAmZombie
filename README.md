@@ -4,6 +4,8 @@
 
 [English](#english) | [中文](#中文)
 
+Release notes / 发布说明: [1.1.0](docs/release-notes-1.1.0.md)
+
 ## English
 
 

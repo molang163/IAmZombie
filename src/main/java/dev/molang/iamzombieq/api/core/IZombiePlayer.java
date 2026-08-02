@@ -7,26 +7,30 @@ import dev.molang.iamzombieq.rules.core.ZombieState;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * Public, stable facade over a single player's zombie state (design §4.2). Obtain an instance via
+ * Public, stable facade over a single player's zombie state. Obtain an instance via
  * {@link IZombiePlayerAPI#get}. The reads are safe to call on any thread that holds a coherent view of the
  * player's attachment (typically the server thread); the mutators are <b>server-thread-only</b> and
  * <b>server-authoritative</b>.
  *
  * <p><b>FakePlayer-safe:</b> every mutator is typed on a {@code ServerPlayer} (a FakePlayer is a
  * {@code ServerPlayer}) and never reads the player's network connection, so driving the facade with a
- * connectionless FakePlayer is well-defined — the network {@code syncData} step becomes a no-op. This design
- * future-enables FakePlayer-driven GameTests (a runtime FakePlayer roundtrip is deferred to a GameTest harness,
- * per PLAN A6).
+ * connectionless FakePlayer is well-defined — the automatic sync triggered by {@code setData} produces no network
+ * send. This design future-enables FakePlayer-driven GameTests (a runtime FakePlayer roundtrip is deferred to a
+ * GameTest harness).
  *
  * <p>The <i>form-changing</i> mutators ({@link #transformToForm} and {@link #resetAfterOrdinaryDeath}) follow a
- * Pre/Post lifecycle (design §4.2 / §5.a): post a cancellable {@code ZombieTransformPreEvent}; if a listener
- * cancels it, make no change and return {@code false}; otherwise write the attachment, sync it, post the observer
- * {@code ZombieTransformedEvent}, and return {@code true}. The non-form mutators ({@link #setSize},
- * {@link #claimReward}) are NOT form changes, so they do NOT fire the transform events — they simply write + sync
- * and always return {@code true}.
+ * Pre/post lifecycle: post a cancellable {@code ZombieTransformPreEvent}; if a listener
+ * cancels it, make no change and return {@code false}; otherwise write the attachment through {@code setData}
+ * (which NeoForge synchronizes automatically), post the observer {@code ZombieTransformedEvent}, and return
+ * {@code true}. The non-form mutators ({@link #setSize}, {@link #claimReward}) are NOT form changes, so they do NOT
+ * fire the transform events — they simply write through {@code setData} and always return {@code true}.
  *
- * <p>NOTE (Phase-1): the existing gameplay handlers do NOT yet route through this facade — migrating them is
- * deferred to Phase-2 (PLAN D1). This facade is fully functional today for addons, tests, and FakePlayer flows.
+ * <p>The built-in giant-kill, ordinary-death clone-reset, and death-evolution handlers publish these same event
+ * types from handler-local atomic gates; they do not route through this facade. Their surrounding gameplay
+ * semantics remain authoritative: canceling a giant transform does not cancel the giant's real death, canceling a
+ * death evolution lets the player's real death continue, and a clone-reset Pre exposes the fresh respawn holder
+ * while its event snapshots carry the authoritative forms. This facade remains fully functional for addons,
+ * tests, and FakePlayer flows.
  *
  * <p>Part of the STABLE public API surface (semver 1.x): backward-compatible additions only within 1.x. (The
  * JetBrains {@code @ApiStatus} family has no {@code Stable} marker; "stable" here means simply not
@@ -68,7 +72,8 @@ public interface IZombiePlayer {
 
     /**
      * Actively changes the player's form (e.g. the giant-kill transform). Posts {@code ZombieTransformPreEvent}
-     * (cancellable), then writes + syncs, then posts {@code ZombieTransformedEvent}.
+     * (cancellable), then writes through automatically-synced {@code setData}, then posts
+     * {@code ZombieTransformedEvent}.
      *
      * @return {@code true} if the change was applied; {@code false} if a listener canceled it.
      */
@@ -76,7 +81,8 @@ public interface IZombiePlayer {
 
     /**
      * Applies a death-driven evolution ("向死而生"). Posts {@code ZombieEvolvePreEvent} (cancellable) carrying the
-     * before/after state and the {@link DeathOutcome}, then writes + syncs, then posts {@code ZombieEvolvedEvent}.
+     * before/after state and the {@link DeathOutcome}, then writes through automatically-synced {@code setData},
+     * then posts {@code ZombieEvolvedEvent}.
      *
      * @return {@code true} if the evolution was applied; {@code false} if a listener canceled it.
      */
@@ -94,8 +100,8 @@ public interface IZombiePlayer {
 
     /**
      * Sets the player's body size (e.g. super-rotten-flesh baby -&gt; adult). A size change is NOT a form change,
-     * so it does NOT post the transform events (and is therefore not cancellable via them): it simply writes the
-     * new size and syncs.
+     * so it does NOT post the transform events (and is therefore not cancellable via them): it writes the new size
+     * through automatically-synced {@code setData}.
      *
      * @return {@code true} (always; the size write is unconditional).
      */
@@ -103,7 +109,8 @@ public interface IZombiePlayer {
 
     /**
      * Records that the one-time first-evolution reward for {@code form} has been claimed. This is a bookkeeping
-     * flag, not a form change, so it does NOT post the transform events: it simply writes the flag and syncs.
+     * flag, not a form change, so it does NOT post the transform events: it writes the flag through
+     * automatically-synced {@code setData}.
      *
      * @return {@code true} (always; the flag write is unconditional).
      */

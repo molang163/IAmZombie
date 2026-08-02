@@ -3,13 +3,13 @@ package dev.molang.iamzombieq.api.extension;
 import org.jetbrains.annotations.ApiStatus;
 
 /**
- * An addon {@link IAttackerHook}'s verdict on whether a mob should target a zombie player (design §5.b). Replaces
+ * An addon {@link IAttackerHook}'s verdict on whether a mob should target a zombie player. Replaces
  * the old {@code @Nullable Boolean} return so the "no opinion" case is explicit rather than encoded as {@code null}.
  *
- * <p><b>Wiring is DEFERRED to Phase-2:</b> no handler consults this yet; the enum + hook ship so addons can compile
+ * <p><b>Wiring is deferred:</b> no handler consults this yet; the enum and hook ship so addons can compile
  * against the stable shape. Marked {@link org.jetbrains.annotations.ApiStatus.Experimental @Experimental} alongside
  * {@link IAttackerHook} because the targeting integration may still evolve. NOT part of the stable 1.x contract until
- * wired in Phase-2.
+ * wired into targeting.
  */
 @ApiStatus.Experimental
 public enum AttackerDecision {
