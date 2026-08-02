@@ -99,11 +99,11 @@ public final class RideHelper {
 
     /**
      * Gate for the baby-player-driven mounts (chicken, big zombie). A non-spectator player whose synced
-     * zombie state is BABY may drive. Mirrors ZombieMountEvents#isBabyZombiePlayer; runs identically on the
-     * controlling client and the server because PLAYER_ZOMBIE is a synced attachment.
+     * zombie state is BABY may drive. This single predicate runs identically on the controlling client and
+     * the server because PLAYER_ZOMBIE is a synced attachment.
      */
     public static boolean isBabyZombieRider(Player rider) {
-        if (rider.isSpectator()) {
+        if (!ZombiePlayerGates.isZombiePlayer(rider)) {
             return false;
         }
         return rider.getData(IAmZombieAttachments.PLAYER_ZOMBIE).state().size() == ZombieSize.BABY;

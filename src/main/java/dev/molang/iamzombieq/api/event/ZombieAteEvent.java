@@ -7,13 +7,13 @@ import net.neoforged.bus.api.Event;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * Observer event fired AFTER a zombie player's food has been handled (design §5.a; the design's
+ * Observer event fired after a zombie player's food has been handled (formerly named
  * {@code ZombieEatedEvent}), carrying the eaten item and the applied {@link FoodRule}. Not cancellable; the eaten
  * stack is an immutable snapshot.
  *
  * <p>Posted on the native {@code NeoForge.EVENT_BUS}; subscribe with {@code @SubscribeEvent}.
  *
- * <p>NOTE (Phase-1): fired by the food handler from the item-eat path ({@code onItemUseFinished}) after a
+ * <p>Fired by the food handler from the item-eat path ({@code onItemUseFinished}) after a
  * successful zombie-food eat, carrying the real eaten {@link ItemStack}. (The cake block-eat path, which has no
  * clean {@code ItemStack}, does not fire it.)
  *

@@ -1,6 +1,8 @@
 package dev.molang.iamzombieq.rules;
 import dev.molang.iamzombieq.rules.difficulty.GameDifficulty;
 import dev.molang.iamzombieq.rules.core.ZombieForm;
+import dev.molang.iamzombieq.rules.core.ZombieSize;
+import dev.molang.iamzombieq.rules.giant.GiantRules;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -13,6 +15,19 @@ public final class ZombieBalanceRules {
     public static final double MATCHBOX_STEVE_HEAD_LOOTING_BONUS = 0.01;
     public static final double STRONG_STEVE_HEAD_BASE = 0.30;
     public static final double STRONG_STEVE_HEAD_LOOTING_BONUS = 0.05;
+    public static final int EFFECT_REFRESH_MARGIN_TICKS = 220;
+    public static final int HUSK_MELEE_HUNGER_DURATION_TICKS = 20 * 15;
+    public static final float SUNLIGHT_BURN_DURATION_SECONDS = 8.0F;
+    public static final float EVOLUTION_RESPAWN_HEALTH_FRACTION = 0.5F;
+    public static final double VANILLA_PLAYER_MAX_HEALTH_BASE = 20.0;
+    public static final double VANILLA_PLAYER_SCALE_BASE = 1.0;
+    public static final double VANILLA_PLAYER_BLOCK_INTERACTION_RANGE_BASE = 4.5;
+    public static final double VANILLA_PLAYER_ENTITY_INTERACTION_RANGE_BASE = 3.0;
+    public static final double VANILLA_PLAYER_STEP_HEIGHT_BASE = 0.6;
+    public static final double VANILLA_PLAYER_ATTACK_DAMAGE_BASE = 1.0;
+
+    private static final double GIANT_SCALE_TARGET = 6.0;
+    private static final double NON_GIANT_ATTACK_DAMAGE_TARGET = 3.0;
 
     private ZombieBalanceRules() {
     }
@@ -33,6 +48,21 @@ public final class ZombieBalanceRules {
         return form == ZombieForm.ZOMBIFIED_PIGLIN ? 0.25 : 1.0;
     }
 
+    /**
+     * The gold-durability reduction roll, moved verbatim out of {@code ItemStackMixin} so it is unit-testable.
+     * Scales {@code amount} by {@link #goldDurabilityConsumptionMultiplier(ZombieForm)}, truncates, adds 1 when
+     * {@code randomDouble} (expected in {@code [0, 1)}) rolls under the fractional remainder, and clamps the result
+     * to {@code [0, amount]}.
+     */
+    public static int scaledDurabilityDamage(int amount, ZombieForm form, double randomDouble) {
+        double scaledAmount = amount * goldDurabilityConsumptionMultiplier(form);
+        int reducedAmount = (int) scaledAmount;
+        if (randomDouble < scaledAmount - reducedAmount) {
+            reducedAmount++;
+        }
+        return Math.max(0, Math.min(amount, reducedAmount));
+    }
+
     public static boolean zombifiedPiglinsDefendPlayer(ZombieForm form) {
         return form == ZombieForm.ZOMBIFIED_PIGLIN;
     }
@@ -41,118 +71,189 @@ public final class ZombieBalanceRules {
         return form == ZombieForm.GIANT ? 100.0 : 20.0;
     }
 
-    // ---- Giant identity (设计指南 §2.4/§6): the SCALE attribute does NOT auto-scale reach/step/attack, so each of
-    // these is an explicit target applied as its own attribute modifier. ----
+    /** Stable semantic keys for the complete form-attribute modifier table. */
+    public enum FormAttributeKey {
+        INNATE_ARMOR,
+        BABY_SCALE,
+        BABY_SPEED,
+        DROWNED_SUBMERGED_MINING,
+        GIANT_MAX_HEALTH,
+        GIANT_SCALE,
+        GIANT_BLOCK_INTERACTION_RANGE,
+        GIANT_ENTITY_INTERACTION_RANGE,
+        GIANT_STEP_HEIGHT,
+        GIANT_SAFE_FALL_DISTANCE,
+        NON_GIANT_ATTACK_DAMAGE,
+        GIANT_ATTACK_DAMAGE,
+        DIFFICULTY_ATTACK_DAMAGE
+    }
 
-    /** Block-interaction (mining/placing) reach for the giant: 4.5 × 6 = 27 (vanilla base 4.5). */
+    /** Minecraft-free equivalents of the two attribute operations used by form modifiers. */
+    public enum AttributeDeltaOperation {
+        ADD_VALUE,
+        ADD_MULTIPLIED_BASE
+    }
+
+    /** One complete-table row; zero amounts are intentional removal instructions and must not be filtered. */
+    public record AttributeDelta(FormAttributeKey key, AttributeDeltaOperation operation, double amount) {
+    }
+
+    /**
+     * The complete thirteen-row form-attribute delta table. Every semantic key is returned for every state so the
+     * Minecraft adapter can remove stable-ID modifiers whose current amount is zero.
+     */
+    public static List<AttributeDelta> formAttributeDeltas(
+            ZombieForm form,
+            ZombieSize size,
+            double configuredArmor,
+            double difficultyFraction) {
+        boolean baby = size == ZombieSize.BABY;
+        boolean drowned = form == ZombieForm.DROWNED;
+        boolean giant = form == ZombieForm.GIANT;
+        return List.of(
+                new AttributeDelta(FormAttributeKey.INNATE_ARMOR,
+                        AttributeDeltaOperation.ADD_VALUE, configuredArmor),
+                new AttributeDelta(FormAttributeKey.BABY_SCALE,
+                        AttributeDeltaOperation.ADD_VALUE, baby ? -0.5 : 0.0),
+                new AttributeDelta(FormAttributeKey.BABY_SPEED,
+                        AttributeDeltaOperation.ADD_MULTIPLIED_BASE, baby ? 0.5 : 0.0),
+                new AttributeDelta(FormAttributeKey.DROWNED_SUBMERGED_MINING,
+                        AttributeDeltaOperation.ADD_VALUE, drowned ? 0.8 : 0.0),
+                new AttributeDelta(FormAttributeKey.GIANT_MAX_HEALTH,
+                        AttributeDeltaOperation.ADD_VALUE,
+                        giant ? maxHealth(ZombieForm.GIANT) - VANILLA_PLAYER_MAX_HEALTH_BASE : 0.0),
+                new AttributeDelta(FormAttributeKey.GIANT_SCALE,
+                        AttributeDeltaOperation.ADD_VALUE,
+                        giant ? GIANT_SCALE_TARGET - VANILLA_PLAYER_SCALE_BASE : 0.0),
+                new AttributeDelta(FormAttributeKey.GIANT_BLOCK_INTERACTION_RANGE,
+                        AttributeDeltaOperation.ADD_VALUE,
+                        giant ? GiantRules.giantBlockInteractionRange()
+                                - VANILLA_PLAYER_BLOCK_INTERACTION_RANGE_BASE : 0.0),
+                new AttributeDelta(FormAttributeKey.GIANT_ENTITY_INTERACTION_RANGE,
+                        AttributeDeltaOperation.ADD_VALUE,
+                        giant ? GiantRules.giantEntityInteractionRange()
+                                - VANILLA_PLAYER_ENTITY_INTERACTION_RANGE_BASE : 0.0),
+                new AttributeDelta(FormAttributeKey.GIANT_STEP_HEIGHT,
+                        AttributeDeltaOperation.ADD_VALUE,
+                        giant ? GiantRules.giantStepHeight() - VANILLA_PLAYER_STEP_HEIGHT_BASE : 0.0),
+                new AttributeDelta(FormAttributeKey.GIANT_SAFE_FALL_DISTANCE,
+                        AttributeDeltaOperation.ADD_VALUE, giant ? GiantRules.giantSafeFallBonus() : 0.0),
+                new AttributeDelta(FormAttributeKey.NON_GIANT_ATTACK_DAMAGE,
+                        AttributeDeltaOperation.ADD_VALUE,
+                        giant ? 0.0 : NON_GIANT_ATTACK_DAMAGE_TARGET - VANILLA_PLAYER_ATTACK_DAMAGE_BASE),
+                new AttributeDelta(FormAttributeKey.GIANT_ATTACK_DAMAGE,
+                        AttributeDeltaOperation.ADD_VALUE,
+                        giant ? GiantRules.giantAttackDamage() - VANILLA_PLAYER_ATTACK_DAMAGE_BASE : 0.0),
+                new AttributeDelta(FormAttributeKey.DIFFICULTY_ATTACK_DAMAGE,
+                        AttributeDeltaOperation.ADD_MULTIPLIED_BASE, giant ? 0.0 : difficultyFraction));
+    }
+
+    // ---- Giant identity: moved verbatim to rules/giant/GiantRules. The @Deprecated members below are
+    // one-line forwarders kept only for external addon compatibility (semver 1.x); in-repo callers use GiantRules. ----
+
+    /** @deprecated moved to {@link GiantRules#giantBlockInteractionRange()}. */
+    @Deprecated
     public static double giantBlockInteractionRange() {
-        return 27.0;
+        return GiantRules.giantBlockInteractionRange();
     }
 
-    /** Entity-interaction (melee/interact) reach for the giant: 3.0 × 6 = 18 (vanilla base 3.0). */
+    /** @deprecated moved to {@link GiantRules#giantEntityInteractionRange()}. */
+    @Deprecated
     public static double giantEntityInteractionRange() {
-        return 18.0;
+        return GiantRules.giantEntityInteractionRange();
     }
 
-    /** Step height for the giant so it strides over short walls instead of jamming: ≈ 0.6 × 6 = 3.6 (base 0.6). */
+    /** @deprecated moved to {@link GiantRules#giantStepHeight()}. */
+    @Deprecated
     public static double giantStepHeight() {
-        return 3.6;
+        return GiantRules.giantStepHeight();
     }
 
-    /** Bonus safe-fall distance for the giant so its tall body does not fall-die from ordinary drops (base 3.0). */
+    /** @deprecated moved to {@link GiantRules#giantSafeFallBonus()}. */
+    @Deprecated
     public static double giantSafeFallBonus() {
-        return 3.0;
+        return GiantRules.giantSafeFallBonus();
     }
 
-    /** The giant's flat melee attack damage: a small bump above the vanilla Giant's 50 (still NOT difficulty-scaled),
-     * keeping the giant slightly stronger than the Warden (vanilla melee 30) per the strengthening pass. */
+    /** @deprecated moved to {@link GiantRules#giantAttackDamage()}. */
+    @Deprecated
     public static double giantAttackDamage() {
-        return 55.0;
+        return GiantRules.giantAttackDamage();
     }
 
-    /** Radius (blocks) of the giant's body-contact stomp aura (设计指南 §4.x; widened for the strengthening pass). */
+    /** @deprecated moved to {@link GiantRules#giantAutoDamageRadius()}. */
+    @Deprecated
     public static double giantAutoDamageRadius() {
-        return 5.0;
+        return GiantRules.giantAutoDamageRadius();
     }
 
-    /** Per-pulse damage of the giant's stomp aura, applied on the 20-tick cadence (raised for the strengthening pass). */
+    /** @deprecated moved to {@link GiantRules#giantAutoDamageAmount()}. */
+    @Deprecated
     public static double giantAutoDamageAmount() {
-        return 10.0;
+        return GiantRules.giantAutoDamageAmount();
     }
 
+    /** @deprecated moved to {@link GiantRules#giantBlockDestructionRadius()}. */
+    @Deprecated
     public static int giantBlockDestructionRadius() {
-        return 3;
+        return GiantRules.giantBlockDestructionRadius();
     }
 
-    /** Horizontal (X/Z) reach the giant's passive walk-destruction inflates its body box by, so it razes a WIDER
-     * swath as it strides (raised for the village-razing pass). */
+    /** @deprecated moved to {@link GiantRules#giantPassiveReachHorizontal()}. */
+    @Deprecated
     public static double giantPassiveReachHorizontal() {
-        return 2.0;
+        return GiantRules.giantPassiveReachHorizontal();
     }
 
-    /** Vertical (Y) reach the giant's passive walk-destruction inflates its body box by, so it razes TALLER
-     * structures above its head; the foot layer and below stay protected by {@link #giantDestroysBlockLayer}. */
+    /** @deprecated moved to {@link GiantRules#giantPassiveReachVertical()}. */
+    @Deprecated
     public static double giantPassiveReachVertical() {
-        return 2.0;
+        return GiantRules.giantPassiveReachVertical();
     }
 
-    /**
-     * Whether a block at world Y {@code blockMinY} should be destroyed by the giant's body contact, given the
-     * giant's foot (bounding-box min) Y {@code giantFootY}. The giant destroys blocks its scaled bounding box
-     * touches EXCEPT the foot layer (and anything below it) so it never digs out its own footing.
-     *
-     * <p>A block occupies {@code [blockMinY, blockMinY + 1)}; the foot layer is the block whose cell contains
-     * {@code giantFootY}. Any block whose cell starts strictly below the cell above the foot is preserved.
-     */
+    /** @deprecated moved to {@link GiantRules#giantDestroysBlockLayer(int, double)}. */
+    @Deprecated
     public static boolean giantDestroysBlockLayer(int blockMinY, double giantFootY) {
-        int footLayer = (int) Math.floor(giantFootY);
-        return blockMinY > footLayer;
+        return GiantRules.giantDestroysBlockLayer(blockMinY, giantFootY);
     }
 
-    /**
-     * The crush predicate for the giant's destruction kernel (设计指南 §4.1/§9.5). A block is crushable only when it
-     * is not air, has no block entity (containers), is not a fluid, and is not on the absolute {@code GIANT_IMMUNE}
-     * blacklist. Anything on the {@code GIANT_SOFT} whitelist is always crushable; otherwise it falls back to a
-     * hardness gate ({@code destroySpeed} in {@code [0, maxHardness]}). Passive walking passes a STONE-TIER
-     * {@code maxHardness} so the walking giant razes terrain/village blocks (stone 1.5, cobble 2.0) but deepslate
-     * 3.0+/obsidian still stop it; the active swing passes a HIGHER one so the punch also breaks ores.
-     */
+    /** @deprecated moved to {@link GiantRules#giantCanCrush(dev.molang.iamzombieq.rules.giant.BlockCrushQuery)}. */
+    @Deprecated
     public static boolean giantCanCrush(boolean isAir, boolean hasBlockEntity, boolean isFluid,
                                         boolean isSoftTag, boolean isImmuneTag, float destroySpeed, float maxHardness) {
-        if (isAir || hasBlockEntity || isFluid || isImmuneTag) {
-            return false;
-        }
-        if (isSoftTag) {
-            return true;
-        }
-        return destroySpeed >= 0.0F && destroySpeed <= maxHardness;
+        return GiantRules.giantCanCrush(new dev.molang.iamzombieq.rules.giant.BlockCrushQuery(
+                isAir, hasBlockEntity, isFluid, isSoftTag, isImmuneTag, destroySpeed, maxHardness));
     }
 
-    /** Passive walk-destruction hardness fallback: stone-tier, so the walking giant razes terrain/village blocks
-     * (stone 1.5, cobblestone/planks/logs/stone-bricks 2.0) but harder blocks (deepslate 3.0+, obsidian) still stop it. */
-    public static final float GIANT_PASSIVE_MAX_HARDNESS = 2.0F;
-    /** Active swing-destruction hardness fallback: high, so the punch breaks stone/ores (but never obsidian/bedrock). */
-    public static final float GIANT_SWING_MAX_HARDNESS = 5.0F;
+    /** @deprecated moved to {@link GiantRules#GIANT_PASSIVE_MAX_HARDNESS}. */
+    @Deprecated
+    public static final float GIANT_PASSIVE_MAX_HARDNESS = GiantRules.GIANT_PASSIVE_MAX_HARDNESS;
+    /** @deprecated moved to {@link GiantRules#GIANT_SWING_MAX_HARDNESS}. */
+    @Deprecated
+    public static final float GIANT_SWING_MAX_HARDNESS = GiantRules.GIANT_SWING_MAX_HARDNESS;
 
-    /** Max blocks the giant's passive walk-destruction removes per tick (bounds worst-case work; raised to match the
-     * wider/taller footprint while still capping per-tick cost). */
+    /** @deprecated moved to {@link GiantRules#giantPassiveDestroyCapPerTick()}. */
+    @Deprecated
     public static int giantPassiveDestroyCapPerTick() {
-        return 256;
+        return GiantRules.giantPassiveDestroyCapPerTick();
     }
 
-    /** Edge length of the giant's active swing destruction cube (raised for the bigger-smash pass: a 17³ region). */
+    /** @deprecated moved to {@link GiantRules#giantSwingCubeEdge()}. */
+    @Deprecated
     public static int giantSwingCubeEdge() {
-        return 17;
+        return GiantRules.giantSwingCubeEdge();
     }
 
-    /** Max blocks a single giant swing destroys (the nearest-to-impact within the cube; raised for the bigger swing). */
+    /** @deprecated moved to {@link GiantRules#giantSwingMaxBlocks()}. */
+    @Deprecated
     public static int giantSwingMaxBlocks() {
-        return 200;
+        return GiantRules.giantSwingMaxBlocks();
     }
 
-    /** Cooldown (ticks) between giant swing AoE destructions, so it is not an infinite instant-miner. */
+    /** @deprecated moved to {@link GiantRules#giantSwingCooldownTicks()}. */
+    @Deprecated
     public static long giantSwingCooldownTicks() {
-        return 25L;
+        return GiantRules.giantSwingCooldownTicks();
     }
 
     /**
@@ -212,13 +313,10 @@ public final class ZombieBalanceRules {
         return bundle;
     }
 
+    /** @deprecated moved to {@link ZombieInfectionRules#infectionChance(GameDifficulty)}. */
+    @Deprecated
     public static double infectionChance(GameDifficulty difficulty) {
-        return switch (difficulty) {
-            case PEACEFUL -> 0.0;
-            case EASY -> 0.25;
-            case NORMAL -> 0.50;
-            case HARD -> 1.0;
-        };
+        return ZombieInfectionRules.infectionChance(difficulty);
     }
 
     public static double normalSteveHeadDropChance(int lootingLevel) {

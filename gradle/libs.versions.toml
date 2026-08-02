@@ -1,0 +1,9 @@
+[versions]
+moddev = "2.0.141"
+junit = "5.13.4"
+
+[libraries]
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+
+[plugins]
+moddev = { id = "net.neoforged.moddev", version.ref = "moddev" }

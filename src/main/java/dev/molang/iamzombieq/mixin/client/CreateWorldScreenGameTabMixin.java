@@ -1,5 +1,6 @@
 package dev.molang.iamzombieq.mixin.client;
 
+import dev.molang.iamzombieq.gameplay.PeacefulGuard;
 import net.minecraft.world.Difficulty;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -14,6 +15,9 @@ import org.spongepowered.asm.mixin.injection.Redirect;
  * {@code withValues(...)} arg, because the constructor builds MULTIPLE CycleButtons via {@code withValues}; redirecting
  * {@code Difficulty.values()} unambiguously targets only the difficulty button. {@code GameTab} is a private inner
  * class, so it is targeted by binary name via {@code targets}. Client-only (dedicated-server safe).
+ *
+ * <p>Woven code may call ordinary mod classes such as {@link PeacefulGuard}; it must not call a helper inside the
+ * mod's mixin package, which would trigger Mixin's class-loading protection.
  */
 @Mixin(targets = "net.minecraft.client.gui.screens.worldselection.CreateWorldScreen$GameTab")
 abstract class CreateWorldScreenGameTabMixin {
@@ -21,8 +25,6 @@ abstract class CreateWorldScreenGameTabMixin {
             method = "<init>",
             at = @At(value = "INVOKE", target = "Lnet/minecraft/world/Difficulty;values()[Lnet/minecraft/world/Difficulty;"))
     private Difficulty[] iamzombieq$onlyNonPeacefulDifficulties() {
-        // Inlined (not a shared helper): the redirect is woven into the vanilla GameTab, which cannot reference a
-        // class in the mod's mixin package, so we build the non-Peaceful array here from the vanilla enum only.
-        return new Difficulty[]{Difficulty.EASY, Difficulty.NORMAL, Difficulty.HARD};
+        return PeacefulGuard.selectableDifficulties();
     }
 }

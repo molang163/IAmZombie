@@ -7,20 +7,20 @@ import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * Addon hook for overriding whether a mob should attack a zombie player (design §5.b). Register an implementation
+ * Addon hook for overriding whether a mob should attack a zombie player. Register an implementation
  * via the {@link IZombieExtensions} registration entry point.
  *
  * <p>The intended call site iterates registered hooks and the FIRST non-{@link AttackerDecision#DEFAULT DEFAULT}
  * result wins; returning {@link AttackerDecision#DEFAULT} means "no opinion", deferring to the next hook and
  * ultimately the built-in targeting matrix. Queried on the server thread.
  *
- * <p>NOTE (Phase-1): this interface ships but is NOT yet wired into the targeting handler — the attacker hook
- * call site is DEFERRED to Phase-2 to avoid entangling the existing target-change logic (PLAN A3). Only the food
- * hook is wired in Phase-1.
+ * <p>This interface ships but is not yet wired into the targeting handler; the attacker hook
+ * call site is deferred to avoid entangling the existing target-change logic. The food hook
+ * is already wired.
  *
  * <p>Marked {@link org.jetbrains.annotations.ApiStatus.Experimental @Experimental}: the enum-based decision and the
  * eventual targeting integration may still evolve before they are wired. NOT part of the stable 1.x contract until
- * wired in Phase-2.
+ * wired into targeting.
  */
 @ApiStatus.Experimental
 @FunctionalInterface

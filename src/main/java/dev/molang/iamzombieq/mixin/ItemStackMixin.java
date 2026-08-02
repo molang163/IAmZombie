@@ -43,11 +43,6 @@ abstract class ItemStackMixin {
             return amount;
         }
 
-        double scaledAmount = amount * ZombieBalanceRules.goldDurabilityConsumptionMultiplier(ZombieForm.ZOMBIFIED_PIGLIN);
-        int reducedAmount = (int) scaledAmount;
-        if (level.getRandom().nextDouble() < scaledAmount - reducedAmount) {
-            reducedAmount++;
-        }
-        return Math.max(0, Math.min(amount, reducedAmount));
+        return ZombieBalanceRules.scaledDurabilityDamage(amount, ZombieForm.ZOMBIFIED_PIGLIN, level.getRandom().nextDouble());
     }
 }

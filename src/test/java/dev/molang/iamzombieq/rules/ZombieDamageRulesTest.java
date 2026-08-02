@@ -59,6 +59,32 @@ class ZombieDamageRulesTest {
     }
 
     @Test
+    void nonGiantEmptyHandDamageIsThreeBeforeDifficultyScaling() {
+        assertScaledAttackDamage(3.0, GameDifficulty.EASY, 3.3);
+        assertScaledAttackDamage(3.0, GameDifficulty.NORMAL, 3.75);
+        assertScaledAttackDamage(3.0, GameDifficulty.HARD, 4.5);
+    }
+
+    @Test
+    void realWeaponAddValueRemainsInsideDifficultyScaling() {
+        // A 26.2 diamond sword contributes ADD_VALUE +6.0. Together with the zombie player's 3.0 empty-hand
+        // damage, the complete 9.0 pre-difficulty value must keep using the existing difficulty multiplier.
+        assertScaledAttackDamage(9.0, GameDifficulty.EASY, 9.9);
+        assertScaledAttackDamage(9.0, GameDifficulty.NORMAL, 11.25);
+        assertScaledAttackDamage(9.0, GameDifficulty.HARD, 13.5);
+    }
+
+    private static void assertScaledAttackDamage(
+            double damageBeforeDifficulty,
+            GameDifficulty difficulty,
+            double expectedDamage) {
+        assertEquals(
+                expectedDamage,
+                damageBeforeDifficulty * ZombieDamageRules.attackDamageMultiplier(difficulty),
+                1.0e-9);
+    }
+
+    @Test
     void sunlightResourcesExistAndBehaveLikeVanillaFire() throws IOException {
         Path damageType = Path.of("src/main/resources/data/iamzombieq/damage_type/sunlight.json");
         assertTrue(Files.isRegularFile(damageType), "missing sunlight damage type");

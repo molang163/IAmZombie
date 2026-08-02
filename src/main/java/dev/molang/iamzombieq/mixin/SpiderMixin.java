@@ -8,14 +8,14 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * B2/B6 -- spider climbing while ridden.
+ * Spider climbing while ridden.
  *
  * <p>Vanilla {@code Spider#onClimbable()} returns the synced {@code isClimbing()} flag, and
  * {@code Spider#tick()} only refreshes that flag SERVER-side ({@code setClimbing(horizontalCollision)} inside
  * an {@code if (!isClientSide)} guard). When a player rides an owner-tamed spider, the vanilla riding flow
  * runs {@code LivingEntity#travel} on the CONTROLLING CLIENT (via the MobMixin controlling-passenger hook),
  * and that client never refreshes the climbing flag -- so the spider would not climb while being driven, and
- * the synced flag could be stale (B6 "never resets").
+ * the synced flag could otherwise remain stale after the collision ends.
  *
  * <p>Fix: for a ridden, owner-controlled spider, derive climbability directly from the LOCAL
  * {@code horizontalCollision} (the value the running {@code travel} uses), so vanilla's
@@ -37,7 +37,7 @@ abstract class SpiderMixin {
         // shared with the controlling-passenger + despawn-backstop hooks so the gate cannot drift.
         if (MountCapability.activeFor(self).isPresent()) {
             // True only while actually pressed against a wall; false otherwise (resets immediately on the
-            // controlling client, fixing both "won't climb while ridden" (B2) and "stuck climbing" (B6)).
+            // controlling client, fixing both failure to climb while ridden and a stale climbing state).
             callback.setReturnValue(self.horizontalCollision);
         }
     }

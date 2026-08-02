@@ -8,20 +8,18 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.gametest.framework.TestData;
 import net.minecraft.gametest.framework.TestEnvironmentDefinition;
 import net.minecraft.resources.Identifier;
-import net.minecraft.world.Difficulty;
 import net.minecraft.world.level.block.Rotation;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 
 /**
- * FakePlayer-driven NeoForge GameTest harness for {@code iamzombieq} (MC 26.2 / NeoForge 26.2.0.6-beta).
+ * FakePlayer-driven NeoForge GameTest harness for {@code iamzombieq} (MC 26.2 / NeoForge 26.2.0.25-beta).
  *
  * <p><b>Registration.</b> MC 26.2 dropped the old {@code @GameTest}/{@code @GameTestHolder} annotations. Tests are
- * registered on the MOD-bus {@link RegisterGameTestsEvent} (auto-subscribed via {@link EventBusSubscriber} — the
- * event implements {@code IModBusEvent}, so it routes to the mod bus without touching {@code IAmZombieMod}). Each
- * test is a {@link ConsumerGameTestInstance} holding its body inline; we never use the {@code TEST_FUNCTION}
- * loader path (that registry is frozen by the time this event fires).
+ * registered on the MOD-bus {@link RegisterGameTestsEvent}; this suite is driven by the shared
+ * {@link IAmZombieGameTestRegistry} (the sole {@code @EventBusSubscriber}), which registers the two shared
+ * environments once and calls {@link #registerAll} here. Each test keeps its original body behind the shared
+ * {@link ConsumerGameTestInstance} function dispatcher, which is registered before the built-in
+ * {@code TEST_FUNCTION} registry freezes.
  *
  * <p><b>Structure.</b> {@link TestData} requires a non-null structure {@link Identifier}; there is no built-in
  * empty structure, so this harness ships a minimal 1x1x1 all-air {@code StructureTemplate} NBT at
@@ -33,7 +31,6 @@ import net.neoforged.neoforge.event.RegisterGameTestsEvent;
  * HARD so the conversions are deterministic). Each test is given generous {@code padding} so batched tests in the
  * shared level are spaced well apart and a tight entity-search radius only sees the test's own structure.
  */
-@EventBusSubscriber(modid = IAmZombieMod.MOD_ID)
 public final class IAmZombieGameTests {
 
     private static final String STRUCTURE = "empty_test";
@@ -41,15 +38,10 @@ public final class IAmZombieGameTests {
     private IAmZombieGameTests() {
     }
 
-    @SubscribeEvent
-    public static void onRegisterGameTests(RegisterGameTestsEvent event) {
-        // A no-op environment (empty AllOf) for tests that don't need a specific world setup.
-        Holder<TestEnvironmentDefinition<?>> defaultEnv =
-                event.registerEnvironment(modId("env_default"));
-        // HARD difficulty so the villager-infection chance is at its maximum (deterministic conversion).
-        Holder<TestEnvironmentDefinition<?>> hardEnv =
-                event.registerEnvironment(modId("env_hard"), new TestEnvironmentDefinition.SetDifficulty(Difficulty.HARD));
-
+    static void registerAll(
+            RegisterGameTestsEvent event,
+            Holder<TestEnvironmentDefinition<?>> defaultEnv,
+            Holder<TestEnvironmentDefinition<?>> hardEnv) {
         register(event, "smoke", defaultEnv, false, 100, IAmZombieGameTestBodies::smoke);
 
         register(event, "food_human_hunger", hardEnv, false, 100, IAmZombieGameTestBodies::foodHumanHunger);
@@ -82,7 +74,8 @@ public final class IAmZombieGameTests {
                 1,            // requiredSuccesses
                 skyAccess,
                 8);           // padding
-        event.registerTest(modId(name), new ConsumerGameTestInstance(info, body));
+        Identifier id = modId(name);
+        event.registerTest(id, new ConsumerGameTestInstance(id, info, body));
     }
 
     private static Identifier modId(String path) {

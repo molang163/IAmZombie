@@ -59,18 +59,7 @@ class ZombieReinforcementRulesTest {
         assertEquals(7, ZombieReinforcementRules.REINFORCEMENT_RANGE_MIN);
         assertEquals(40, ZombieReinforcementRules.REINFORCEMENT_RANGE_MAX);
         assertEquals(50, ZombieReinforcementRules.REINFORCEMENT_ATTEMPTS);
-    }
-
-    @Test
-    void spawnPositionViabilityRequiresAllConditions() {
-        // (solidTop, light, playerWithin7, collisionFree)
-        assertTrue(ZombieReinforcementRules.isSpawnPositionViable(true, 0, false, true), "dark solid spot clear of players spawns");
-        assertTrue(ZombieReinforcementRules.isSpawnPositionViable(true, 9, false, true), "light at the predicate's documented ceiling (MAX_SPAWN_LIGHT=9, not a vanilla value) is allowed");
-        assertFalse(ZombieReinforcementRules.isSpawnPositionViable(true, 10, false, true), "too bright (>9) is rejected");
-        assertFalse(ZombieReinforcementRules.isSpawnPositionViable(false, 0, false, true), "no solid surface is rejected");
-        assertFalse(ZombieReinforcementRules.isSpawnPositionViable(true, 0, true, true), "a nearby player blocks the spawn");
-        assertFalse(ZombieReinforcementRules.isSpawnPositionViable(true, 0, false, false), "a collision blocks the spawn");
-        assertEquals(9, ZombieReinforcementRules.MAX_SPAWN_LIGHT);
+        // The min-player-distance gate for the live spawn path (ZombieReinforcementEvents).
         assertEquals(7.0, ZombieReinforcementRules.MIN_PLAYER_DISTANCE, EPSILON);
     }
 

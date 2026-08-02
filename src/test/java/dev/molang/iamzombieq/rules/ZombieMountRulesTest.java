@@ -2,6 +2,7 @@ package dev.molang.iamzombieq.rules;
 import dev.molang.iamzombieq.rules.mount.MountKind;
 import dev.molang.iamzombieq.rules.mount.ZombieMountRules;
 import dev.molang.iamzombieq.rules.core.ZombieSize;
+import dev.molang.iamzombieq.util.SourceScan;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -31,6 +32,14 @@ class ZombieMountRulesTest {
     void otherMountsUseVanillaRules() {
         assertTrue(ZombieMountRules.canMount(true, MountKind.OTHER, false));
         assertTrue(ZombieMountRules.canMount(false, MountKind.NORMAL_HORSE, false));
+    }
+
+    @Test
+    void zombiePlayersOfEitherSizeCanRideStridersThroughBothEntries() {
+        assertTrue(ZombieMountRules.canMount(true, ZombieSize.ADULT, MountKind.STRIDER, false));
+        assertTrue(ZombieMountRules.canMount(true, ZombieSize.BABY, MountKind.STRIDER, false));
+        assertTrue(ZombieMountRules.canMount(true, MountKind.STRIDER, false),
+                "the compatibility entry defaults to an adult rider and must preserve strider access");
     }
 
     @Test
@@ -79,10 +88,18 @@ class ZombieMountRulesTest {
     }
 
     @Test
+    void zombieHorseHealingUsesOriginalFoodAmounts() {
+        assertEquals(4.0F, ZombieMountRules.zombieHorseHealAmount("minecraft:rotten_flesh"));
+        assertEquals(10.0F, ZombieMountRules.zombieHorseHealAmount("iamzombieq:super_rotten_flesh"));
+        assertEquals(0.0F, ZombieMountRules.zombieHorseHealAmount("minecraft:spider_eye"));
+        assertEquals(0.0F, ZombieMountRules.zombieHorseHealAmount("minecraft:wheat"));
+    }
+
+    @Test
     void modDrivenMountsHaveAPositiveRiddenSpeedAndOthersDefaultToZero() {
         // Spider/chicken/big-zombie are driven by the controlling-passenger flow (getRiddenSpeed), so they need
         // a movement-speed-attribute value; mounts the mod does not drive itself keep their vanilla ridden
-        // speed (0). B3: the spider is now unified into riddenSpeedFor too (with a separate config override).
+        // speed (0). The spider is also unified into riddenSpeedFor, with a separate config override.
         assertEquals(ZombieMountRules.DEFAULT_SPIDER_MOUNT_SPEED, ZombieMountRules.riddenSpeedFor(MountKind.SPIDER));
         assertEquals(ZombieMountRules.CHICKEN_MOUNT_SPEED, ZombieMountRules.riddenSpeedFor(MountKind.CHICKEN));
         assertEquals(ZombieMountRules.BIG_ZOMBIE_MOUNT_SPEED, ZombieMountRules.riddenSpeedFor(MountKind.BIG_ZOMBIE));
@@ -100,7 +117,7 @@ class ZombieMountRulesTest {
 
     @Test
     void spiderRiddenSpeedUsesConfigOverrideButFallsBackToTheRulesDefault() {
-        // B3: spider speed is centralized; a positive config value overrides, else the rules default applies.
+        // Spider speed is centralized; a positive config value overrides, else the rules default applies.
         assertEquals(ZombieMountRules.DEFAULT_SPIDER_MOUNT_SPEED, ZombieMountRules.spiderRiddenSpeed(ZombieMountRules.DEFAULT_SPIDER_MOUNT_SPEED));
         assertEquals(0.6F, ZombieMountRules.spiderRiddenSpeed(0.6F));
         // A non-positive (misconfigured) value must never freeze the mount: fall back to the default.
@@ -122,7 +139,7 @@ class ZombieMountRulesTest {
 
     @Test
     void spiderTamingProgressIsFoodDependentAndNotInstant() {
-        // B1: one feed must NOT instantly tame; progress accrues per food and tames only at the threshold.
+        // One feed must NOT instantly tame; progress accrues per food and tames only at the threshold.
         assertEquals(20, ZombieMountRules.spiderTameProgressFor("minecraft:rotten_flesh"));
         assertEquals(35, ZombieMountRules.spiderTameProgressFor("minecraft:spider_eye"));
         assertEquals(60, ZombieMountRules.spiderTameProgressFor("iamzombieq:super_rotten_flesh"));
@@ -161,7 +178,7 @@ class ZombieMountRulesTest {
         assertEquals(20, ZombieMountRules.spiderTameProgressAfterFeed(-50, "minecraft:rotten_flesh"));
     }
 
-    // ---- M6 source-shape audit: the controlling-passenger riding flow is the only mount driver ----
+    // ---- Source-shape audit: the controlling-passenger riding flow is the only mount driver ----
     private static final Path EVENTS = Path.of("src/main/java/dev/molang/iamzombieq/gameplay/ZombieMountEvents.java");
     private static final Path MOB_MIXIN = Path.of("src/main/java/dev/molang/iamzombieq/mixin/MobMixin.java");
     private static final Path LIVING_MIXIN = Path.of("src/main/java/dev/molang/iamzombieq/mixin/LivingEntityMixin.java");
@@ -173,7 +190,7 @@ class ZombieMountRulesTest {
         // its motion server-side (that desyncs on a dedicated server). No mount-flow file may call
         // setDeltaMovement/move(MoverType...) and the old ad-hoc driveMount must be gone.
         for (Path p : new Path[] {EVENTS, MOB_MIXIN, LIVING_MIXIN, RIDE_HELPER}) {
-            String code = stripComments(Files.readString(p));
+            String code = SourceScan.stripComments(Files.readString(p));
             assertFalse(code.contains("setDeltaMovement"),
                     p + " must not steer a ridden mount with server-only setDeltaMovement");
             assertFalse(code.contains(".move(MoverType"),
@@ -188,10 +205,18 @@ class ZombieMountRulesTest {
         String mob = Files.readString(MOB_MIXIN);
         // MobMixin makes the baby-player rider the controlling passenger so the client emits vehicle-move
         // packets. After the Tier-3 refactor the per-mount classification lives in MountCapability and the
-        // mixin delegates to it (activeRider for the controlling passenger).
+        // mixin delegates to it (activeRider for the controlling passenger). The despawn backstop moved to
+        // the MobDespawnEvent handler in ZombieMountEvents, so this remains the movement injection.
         assertTrue(mob.contains("getControllingPassenger"), "MobMixin must hook getControllingPassenger");
         assertTrue(mob.contains("MountCapability.activeRider"),
                 "MobMixin must report the controlling rider via the MountCapability registry");
+        assertFalse(mob.contains("removeWhenFarAway"),
+                "MobMixin must no longer inject removeWhenFarAway (backstop moved to MobDespawnEvent)");
+        String eventsWiring = Files.readString(EVENTS);
+        assertTrue(eventsWiring.contains("MobDespawnEvent")
+                        && eventsWiring.contains("MobDespawnEvent.Result.DENY")
+                        && eventsWiring.contains("MountCapability.activeFor"),
+                "ZombieMountEvents must DENY despawn for actively-serving mod mounts via MobDespawnEvent");
 
         // The chicken + big-zombie capabilities (and their valid-rider predicates) must exist in the registry.
         String capability = Files.readString(Path.of("src/main/java/dev/molang/iamzombieq/util/MountCapability.java"));
@@ -214,17 +239,17 @@ class ZombieMountRulesTest {
         String events = Files.readString(EVENTS);
         assertTrue(events.contains("maybeAutoTargetForMountedBigZombie"),
                 "the big-zombie auto-attack acquisition must be kept after removing driveMount");
-        // B6: the ridden-spider climbing flag must be tracked in BOTH directions (resets to false when not
+        // The ridden-spider climbing flag must be tracked in BOTH directions (resets to false when not
         // colliding), not only ever poked true. The actual climb motion comes from SpiderMixin.
         assertTrue(events.contains("spider.setClimbing(spider.horizontalCollision)"),
                 "the ridden spider's climbing flag must track horizontalCollision (set true AND reset false)");
         assertFalse(events.contains("spider.setClimbing(true)"),
-                "the one-directional setClimbing(true) (never reset) must be gone (B6)");
+                "the one-directional setClimbing(true) path that never resets must be gone");
     }
 
     @Test
     void spiderClimbWhileRiddenIsDrivenByASpiderMixinOnOnClimbable() throws IOException {
-        // B2: vanilla travel applies upward climb motion when (horizontalCollision || jumping) && onClimbable().
+        // Vanilla travel applies upward climb motion when (horizontalCollision || jumping) && onClimbable().
         // A mixin makes a ridden owner-spider's onClimbable() track local horizontalCollision so it climbs on
         // the controlling client and resets when not colliding.
         Path spiderMixin = Path.of("src/main/java/dev/molang/iamzombieq/mixin/SpiderMixin.java");
@@ -244,18 +269,11 @@ class ZombieMountRulesTest {
     @Test
     void rideHelperReturnsRawInputWithoutYawRotationToAvoidDoubleRotation() throws IOException {
         String helper = Files.readString(RIDE_HELPER);
-        String input = helper.substring(helper.indexOf("public static Vec3 riddenInput"),
-                helper.indexOf("}", helper.indexOf("public static Vec3 riddenInput")));
+        String input = SourceScan.methodBody(helper, "public static Vec3 riddenInput");
         // AbstractHorse-style raw input: strafe x0.5, backward x0.25, no sin/cos yaw rotation (travel rotates).
         assertTrue(input.contains("xxa * 0.5F"), "strafe must be halved like AbstractHorse");
         assertTrue(input.contains("0.25F"), "backward must be quartered like AbstractHorse");
         assertFalse(input.contains("sin") || input.contains("cos"),
                 "riddenInput must NOT pre-rotate by yaw; the mount's travel() applies rotation (no double-rotation)");
-    }
-
-    private static String stripComments(String code) {
-        return code
-                .replaceAll("(?s)/\\*.*?\\*/", "")
-                .replaceAll("(?m)//.*$", "");
     }
 }

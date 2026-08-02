@@ -8,11 +8,17 @@ import net.neoforged.bus.api.ICancellableEvent;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * Cancellable event fired BEFORE a death-driven evolution ("向死而生") is applied (design §5.a), e.g. inside
+ * Cancellable event fired before a death-driven evolution ("向死而生") is applied, for example inside
  * {@code IZombiePlayer.evolveFromDeath}. Cancel it to veto the evolution.
  *
  * <p>Posted on the native {@code NeoForge.EVENT_BUS}; subscribe with {@code @SubscribeEvent}. The before/after
  * {@link ZombieState}s and the {@link DeathOutcome} are immutable snapshots.
+ *
+ * <p>The built-in death-evolution handler fires this event after resolving the complete evolution result and
+ * before canceling the underlying death or granting a reward. If a listener vetoes it, real player death continues
+ * with no state write, reward, Post event, advancement, or recovery. The immutable
+ * {@code before/after/outcome are the authoritative snapshots}; the player still carries the before-state
+ * attachment while listeners run.
  *
  * <p>Part of the STABLE public API surface (semver 1.x).
  */

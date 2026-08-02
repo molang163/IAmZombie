@@ -5,6 +5,11 @@ public final class HerobrineRules {
     public static final double GAZE_DOT_THRESHOLD = 0.985;
     public static final double GAZE_DISTANCE = 24.0;
     public static final double SILENCE_DISTANCE = 28.0;
+    public static final int CAVE_SPAWN_SEA_LEVEL_OFFSET = 8;
+    public static final int CAVE_SPAWN_ATTEMPTS = 16;
+    public static final int CAVE_SPAWN_HORIZONTAL_DISTANCE = 12;
+    public static final int CAVE_SPAWN_VERTICAL_OFFSET_RADIUS = 3;
+    public static final int CAVE_SPAWN_VERTICAL_SEARCH_RADIUS = 4;
 
     private HerobrineRules() {
     }

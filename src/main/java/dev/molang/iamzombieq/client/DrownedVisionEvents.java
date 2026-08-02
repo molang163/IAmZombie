@@ -10,7 +10,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.client.event.ViewportEvent;
 
 /**
- * Client-only handler for G3 (drowned wet-state clear vision).
+ * Client-only handler for drowned wet-state clear vision.
  *
  * <p>When the LOCAL player is in the drowned zombie form and is underwater (or otherwise wet),
  * the murky water fog is pushed far out so the underwater view becomes "通透" (clear).</p>
@@ -24,9 +24,9 @@ import net.neoforged.neoforge.client.event.ViewportEvent;
 public final class DrownedVisionEvents {
     /**
      * Default-on toggle. The client config spec ({@code IAmZombieClientConfig}) is owned by a
-     * different scope and may not be edited here, so this is a code constant per the plan
-     * ("Add a client config toggle if the client config pattern exists; otherwise default-on
-     * with a code constant.").
+     * different scope, so this rendering-only behavior is kept as a code constant. It does not
+     * depend on synchronized gameplay configuration and is evaluated only by this client-only
+     * event handler.
      */
     private static final boolean CLEAR_DROWNED_WATER_FOG = true;
 

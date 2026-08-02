@@ -13,9 +13,9 @@ class ZombiePotionRulesTest {
 
     @Test
     void spectatorsAndNonPlayersKeepVanillaInstantPotionLogic() {
-        // N6: creative zombie players now also use undead inversion (creative rules align with survival);
+        // Creative zombie players also use undead inversion, matching survival behavior;
         // only spectators and non-players keep vanilla instant-potion logic.
-        assertTrue(ZombiePotionRules.shouldInvertHealAndHarm(true, true, false), "creative zombie players invert (N6)");
+        assertTrue(ZombiePotionRules.shouldInvertHealAndHarm(true, true, false), "creative zombie players invert heal and harm");
         assertFalse(ZombiePotionRules.shouldInvertHealAndHarm(true, false, true));
         assertFalse(ZombiePotionRules.shouldInvertHealAndHarm(false, false, false));
     }

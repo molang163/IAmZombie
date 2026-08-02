@@ -1,6 +1,8 @@
 package dev.molang.iamzombieq.gameplay;
 import dev.molang.iamzombieq.rules.food.ZombieFoodRules;
+import dev.molang.iamzombieq.util.SourceScan;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -12,32 +14,59 @@ import org.junit.jupiter.api.Test;
 class ZombieFoodEventsSourceTest {
     private static final Path FOOD_SOURCE = Path.of("src/main/java/dev/molang/iamzombieq/gameplay/ZombieFoodEvents.java");
     private static final Path CONFIG_SOURCE = Path.of("src/main/java/dev/molang/iamzombieq/IAmZombieConfig.java");
-    private static final Path RULES_SOURCE = Path.of("src/main/java/dev/molang/iamzombieq/rules/food/ZombieFoodRules.java");
+    private static final Path CLIENT_SOURCE = Path.of("src/main/java/dev/molang/iamzombieq/client/IAmZombieClient.java");
 
     @Test
-    void explicitFoodTableClassifiesRepresentativeFoodsIntoTheGradedTiers() throws IOException {
-        String rules = Files.readString(RULES_SOURCE);
+    void configuredZombieFoodIdsSplitServerAndRemoteClientAuthority() throws IOException {
+        String config = Files.readString(CONFIG_SOURCE);
+        String foodEvents = Files.readString(FOOD_SOURCE);
+        String client = Files.readString(CLIENT_SOURCE);
 
-        // T1 CARRION raw flesh grants Strength.
-        assertTrue(rules.contains("Map.entry(\"minecraft:rotten_flesh\", () -> carrion("),
-                "rotten flesh should be a CARRION rule");
-        assertTrue(rules.contains("MobEffects.STRENGTH"), "carrion raw meats should grant Strength");
-        // Super rotten flesh stays CARRION with the baby->adult restore.
-        assertTrue(rules.contains("carrionBabyRestore("), "super rotten flesh should restore the baby state");
-        // T3 HUMAN_COOKED cooked meats punish; sweets add Slowness.
-        assertTrue(rules.contains("Map.entry(\"minecraft:cooked_beef\", () -> humanCooked(false))"),
-                "cooked beef should be a HUMAN_COOKED rule");
-        assertTrue(rules.contains("Map.entry(\"minecraft:cookie\", () -> humanCooked(true))"),
-                "sweets should pass sweet=true so Slowness is added");
-        assertTrue(rules.contains("MobEffects.SLOWNESS"), "sweet human food should add a Slowness debuff");
-        // T4 SPECIAL golden apples suppress vanilla positives (third arg of special(...) is true).
-        assertTrue(rules.contains("Map.entry(\"minecraft:golden_apple\", () -> special("),
-                "golden apple should be a SPECIAL rule");
-        assertTrue(rules.contains("Map.entry(\"minecraft:enchanted_golden_apple\", () -> special("),
-                "enchanted golden apple should be a SPECIAL rule");
-        // The DEFAULT catch-all resolves unknown foods to a HUMAN_COOKED rule.
-        assertTrue(rules.contains("return humanCooked(false);"),
-                "the catch-all default should resolve unknown foods to HUMAN_COOKED");
+        assertTrue(config.contains("public static Set<String> configuredZombieFoods()"),
+                "the compatibility facade must retain its public normalization helper");
+        String normalizer = SourceScan.compact(
+                SourceScan.stripComments(
+                        SourceScan.methodBody(config, "public static Set<String> configuredZombieFoods")));
+        int liveRead = normalizer.indexOf("ZOMBIE_FOODS.get()");
+        int rootLowercase = normalizer.indexOf("toLowerCase(Locale.ROOT)");
+        int immutableSet = normalizer.indexOf("Collectors.toUnmodifiableSet()");
+        assertTrue(liveRead >= 0 && rootLowercase > liveRead && immutableSet > rootLowercase,
+                "the compatibility helper must still alias the canonical list and preserve its contract");
+
+        String relevantSources = config + foodEvents + client;
+        assertEquals(2, SourceScan.countOccurrences(relevantSources, "Set<String> configuredZombieFoods()"),
+                "only the compatibility facade and canonical SERVER consumer may normalize local values");
+        assertEquals(2, SourceScan.countOccurrences(relevantSources, "toLowerCase(Locale.ROOT)"),
+                "only the compatibility facade and canonical SERVER consumer may lower-case food ids");
+        assertEquals(2, SourceScan.countOccurrences(relevantSources, "Collectors.toUnmodifiableSet()"),
+                "only the compatibility facade and canonical SERVER consumer may collect the local list");
+        assertEquals(3, SourceScan.countOccurrences(foodEvents, "configuredZombieFoods()"),
+                "one helper plus cake and built-in provider paths must use canonical SERVER normalization");
+        assertTrue(SourceScan.methodBody(foodEvents, "public static void onRightClickCakeBlock")
+                        .contains("configuredZombieFoods()"),
+                "the cake path must use canonical SERVER normalization");
+        assertTrue(SourceScan.methodBody(foodEvents, "private static FoodRule resolveFoodRule")
+                        .contains("configuredZombieFoods()"),
+                "the built-in provider fallback must use canonical SERVER normalization");
+        assertTrue(SourceScan.methodBody(client, "public static void onItemTooltip")
+                        .contains("configuredZombieFoods(authorityConnection)"),
+                "the client tooltip must use the current connection's READY remote19 payload");
+        assertTrue(client.contains("\"configuredZombieFoods\"")
+                        && client.contains("CONFIGURED_ZOMBIE_FOODS.invokeExact(")
+                        && client.contains("MethodHandles.privateLookupIn("),
+                "the remote19 helper must invoke the package-private authority runtime through its cached handle");
+        assertTrue(foodEvents.contains("private static Set<String> configuredZombieFoods()"),
+                "the logical server must own its canonical SERVER normalizer");
+        assertFalse(client.contains("private static Set<String> configuredZombieFoods()"),
+                "the physical client must not normalize a local SERVER value");
+        assertFalse(foodEvents.contains("IAmZombieConfig."),
+                "logical-server food gameplay must not call the legacy facade");
+        assertFalse(client.contains("IAmZombieConfig."),
+                "physical-client food UI must not call the legacy facade");
+        assertFalse(client.replace("IAmZombieServerConfig.SPEC", "")
+                        .contains("IAmZombieServerConfig."),
+                "physical-client food UI may identity-check the SERVER spec "
+                        + "but must not read a local SERVER ConfigValue");
     }
 
     @Test
@@ -113,7 +142,7 @@ class ZombieFoodEventsSourceTest {
     void creativeStillReceivesTheSpecialZombieFoodBuffSubstitution() throws IOException {
         String source = Files.readString(FOOD_SOURCE);
 
-        // G1: processing must no longer be blanket-skipped in creative; the special foods get the buff substitution.
+        // Processing must not be blanket-skipped in creative; the special foods get the buff substitution.
         assertFalse(source.contains("shouldApplyZombieFoodRules"),
                 "the old creative-excluding processing gate should be replaced");
         assertFalse(source.contains("&& !player.isCreative() &&"),
@@ -131,7 +160,7 @@ class ZombieFoodEventsSourceTest {
     void zombiePlayersCanStartEatingBuffFoodsAtFullHungerWithoutMutatingItems() throws IOException {
         String source = Files.readString(FOOD_SOURCE);
 
-        // G7: a server-side right-click intercept force-starts the eat instead of changing vanilla FoodProperties.
+        // A server-side right-click intercept force-starts the eat instead of changing vanilla FoodProperties.
         assertTrue(source.contains("PlayerInteractEvent.RightClickItem"),
                 "full-hunger eating should be enabled via a server-side right-click intercept");
         assertTrue(source.contains("ZombieFoodRules.isAlwaysEdibleForZombies(itemId(stack))"),

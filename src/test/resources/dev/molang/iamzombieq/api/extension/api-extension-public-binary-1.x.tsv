@@ -1,0 +1,18 @@
+# Public compatibility baseline for the api/extension class-file shape in the 1.x line.
+# kind	owner	name	access	descriptor	signature	declaration_annotations
+CLASS	dev/molang/iamzombieq/api/extension/AttackerDecision	-	0x4031	-	Ljava/lang/Enum<Ldev/molang/iamzombieq/api/extension/AttackerDecision;>;	Lorg/jetbrains/annotations/ApiStatus$Experimental;
+CLASS	dev/molang/iamzombieq/api/extension/IAttackerHook	-	0x0601	-	-	Ljava/lang/FunctionalInterface;,Lorg/jetbrains/annotations/ApiStatus$Experimental;
+CLASS	dev/molang/iamzombieq/api/extension/IFoodRuleProvider	-	0x0601	-	-	Ljava/lang/FunctionalInterface;
+CLASS	dev/molang/iamzombieq/api/extension/IZombieExtensions	-	0x0031	-	-	-
+FIELD	dev/molang/iamzombieq/api/extension/AttackerDecision	ALLOW_IF_PROVOKED	0x4019	Ldev/molang/iamzombieq/api/extension/AttackerDecision;	-	-
+FIELD	dev/molang/iamzombieq/api/extension/AttackerDecision	DEFAULT	0x4019	Ldev/molang/iamzombieq/api/extension/AttackerDecision;	-	-
+FIELD	dev/molang/iamzombieq/api/extension/AttackerDecision	FORCE_TARGET	0x4019	Ldev/molang/iamzombieq/api/extension/AttackerDecision;	-	-
+FIELD	dev/molang/iamzombieq/api/extension/AttackerDecision	IGNORE	0x4019	Ldev/molang/iamzombieq/api/extension/AttackerDecision;	-	-
+METHOD	dev/molang/iamzombieq/api/extension/AttackerDecision	valueOf	0x0009	(Ljava/lang/String;)Ldev/molang/iamzombieq/api/extension/AttackerDecision;	-	-
+METHOD	dev/molang/iamzombieq/api/extension/AttackerDecision	values	0x0009	()[Ldev/molang/iamzombieq/api/extension/AttackerDecision;	-	-
+METHOD	dev/molang/iamzombieq/api/extension/IAttackerHook	shouldAttack	0x0401	(Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/server/level/ServerPlayer;Ldev/molang/iamzombieq/rules/core/ZombieForm;)Ldev/molang/iamzombieq/api/extension/AttackerDecision;	-	Lorg/jetbrains/annotations/NotNull;
+METHOD	dev/molang/iamzombieq/api/extension/IFoodRuleProvider	ruleForStack	0x0401	(Lnet/minecraft/server/level/ServerPlayer;Lnet/minecraft/world/item/ItemStack;Ljava/lang/String;)Ldev/molang/iamzombieq/rules/food/FoodRule;	-	Lorg/jetbrains/annotations/Nullable;
+METHOD	dev/molang/iamzombieq/api/extension/IZombieExtensions	attackerHooks	0x0009	()Ljava/util/List;	()Ljava/util/List<Ldev/molang/iamzombieq/api/extension/IAttackerHook;>;	Lorg/jetbrains/annotations/ApiStatus$Internal;,Lorg/jetbrains/annotations/NotNull;
+METHOD	dev/molang/iamzombieq/api/extension/IZombieExtensions	foodRuleProviders	0x0009	()Ljava/util/List;	()Ljava/util/List<Ldev/molang/iamzombieq/api/extension/IFoodRuleProvider;>;	Lorg/jetbrains/annotations/ApiStatus$Internal;,Lorg/jetbrains/annotations/NotNull;
+METHOD	dev/molang/iamzombieq/api/extension/IZombieExtensions	register	0x0009	(Ldev/molang/iamzombieq/api/extension/IAttackerHook;)V	-	-
+METHOD	dev/molang/iamzombieq/api/extension/IZombieExtensions	register	0x0009	(Ldev/molang/iamzombieq/api/extension/IFoodRuleProvider;)V	-	-

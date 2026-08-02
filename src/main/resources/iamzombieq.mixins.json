@@ -5,19 +5,26 @@
   "compatibilityLevel": "JAVA_25",
   "mixins": [
     "DifficultyCommandMixin",
+    "HurtByTargetGoalAlertMixin",
     "ItemStackMixin",
     "LivingEntityMixin",
     "MinecraftServerMixin",
     "MobMixin",
-    "PlayerCoffinSleepMixin",
+    "ConnectionSpiderImpulseCleanupMixin",
+    "ServerConfigurationPacketListenerMixin",
+    "ServerGamePacketListenerVehicleMixin",
+    "ServerPlayerSpiderPassengerPacketMixin",
+    "ServerEntitySpiderImpulseMixin",
+    "ServerLifecycleHooksMixin",
     "SpiderMixin",
-    "VillagerHostilesSensorMixin",
-    "WanderingTraderMixin"
+    "VillagerHostilesSensorMixin"
   ],
   "client": [
     "client.AvatarRendererMixin",
+    "client.ClientConfigurationPacketListenerMixin",
     "client.CreateWorldScreenGameTabMixin",
     "client.DifficultyButtonsMixin",
+    "client.LivingEntityAuthorityMixin",
     "client.LivingEntityRendererSwimMixin"
   ],
   "injectors": {

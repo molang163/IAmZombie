@@ -222,4 +222,34 @@ class ZombieEvolutionRulesTest {
         assertFalse(ZombieEvolutionRules.canTransformFromGiantKill(false, "minecraft:giant"));
         assertFalse(ZombieEvolutionRules.canTransformFromGiantKill(true, "minecraft:zombie"));
     }
+
+    @Test
+    void firstEvolutionRewardGrantsOncePerFormWhenFlagUnclaimedAndFormMatches() {
+        // Unclaimed + matching form -> that form's reward.
+        assertEquals(ZombieEvolutionRules.FirstEvolutionReward.TRIDENT,
+                ZombieEvolutionRules.resolveFirstEvolutionReward(DeathOutcome.EVOLVE_TO_DROWNED, ZombieForm.DROWNED, false, false, false));
+        assertEquals(ZombieEvolutionRules.FirstEvolutionReward.HUSK_DESERT_BUNDLE,
+                ZombieEvolutionRules.resolveFirstEvolutionReward(DeathOutcome.EVOLVE_TO_HUSK, ZombieForm.HUSK, false, false, false));
+        assertEquals(ZombieEvolutionRules.FirstEvolutionReward.ENCHANTED_GOLD_SWORD,
+                ZombieEvolutionRules.resolveFirstEvolutionReward(DeathOutcome.EVOLVE_TO_ZOMBIFIED_PIGLIN, ZombieForm.ZOMBIFIED_PIGLIN, false, false, false));
+    }
+
+    @Test
+    void firstEvolutionRewardIsSuppressedWhenAlreadyClaimedOrFormMismatch() {
+        // Already claimed -> no reward.
+        assertEquals(ZombieEvolutionRules.FirstEvolutionReward.NONE,
+                ZombieEvolutionRules.resolveFirstEvolutionReward(DeathOutcome.EVOLVE_TO_DROWNED, ZombieForm.DROWNED, true, false, false));
+        assertEquals(ZombieEvolutionRules.FirstEvolutionReward.NONE,
+                ZombieEvolutionRules.resolveFirstEvolutionReward(DeathOutcome.EVOLVE_TO_HUSK, ZombieForm.HUSK, false, true, false));
+        assertEquals(ZombieEvolutionRules.FirstEvolutionReward.NONE,
+                ZombieEvolutionRules.resolveFirstEvolutionReward(DeathOutcome.EVOLVE_TO_ZOMBIFIED_PIGLIN, ZombieForm.ZOMBIFIED_PIGLIN, false, false, true));
+        // Resulting form doesn't match the outcome -> no reward.
+        assertEquals(ZombieEvolutionRules.FirstEvolutionReward.NONE,
+                ZombieEvolutionRules.resolveFirstEvolutionReward(DeathOutcome.EVOLVE_TO_DROWNED, ZombieForm.NORMAL, false, false, false));
+        // Non-reward outcomes never grant.
+        assertEquals(ZombieEvolutionRules.FirstEvolutionReward.NONE,
+                ZombieEvolutionRules.resolveFirstEvolutionReward(DeathOutcome.EVOLVE_TO_BABY, ZombieForm.NORMAL, false, false, false));
+        assertEquals(ZombieEvolutionRules.FirstEvolutionReward.NONE,
+                ZombieEvolutionRules.resolveFirstEvolutionReward(DeathOutcome.ORDINARY_DEATH_RESET, ZombieForm.NORMAL, false, false, false));
+    }
 }

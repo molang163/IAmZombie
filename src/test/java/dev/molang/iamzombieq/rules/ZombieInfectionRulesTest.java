@@ -1,12 +1,22 @@
 package dev.molang.iamzombieq.rules;
 import dev.molang.iamzombieq.rules.difficulty.GameDifficulty;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
 class ZombieInfectionRulesTest {
+    @Test
+    void villagerAndHorseInfectionChanceMatchesDifficulty() {
+        // Retains the infection-chance table previously covered by ZombieBalanceRulesTest.
+        assertEquals(0.25, ZombieInfectionRules.infectionChance(GameDifficulty.EASY));
+        assertEquals(0.50, ZombieInfectionRules.infectionChance(GameDifficulty.NORMAL));
+        assertEquals(1.00, ZombieInfectionRules.infectionChance(GameDifficulty.HARD));
+        assertEquals(0.00, ZombieInfectionRules.infectionChance(GameDifficulty.PEACEFUL));
+    }
+
     @Test
     void infectionChanceUsesCapturedDifficultyValues() {
         assertTrue(ZombieInfectionRules.shouldInfect(GameDifficulty.EASY, 0.24));

@@ -1,4 +1,5 @@
 package dev.molang.iamzombieq.rules;
+import dev.molang.iamzombieq.rules.food.EffectId;
 import dev.molang.iamzombieq.rules.food.FoodTier;
 import dev.molang.iamzombieq.rules.food.FoodRule;
 import dev.molang.iamzombieq.rules.food.ZombieFoodRules;
@@ -8,23 +9,37 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Set;
+import java.util.function.Function;
+import java.util.function.ToIntFunction;
 import org.junit.jupiter.api.Test;
 
 // NOTE: the test source set has no Minecraft/NeoForge on its classpath (testRuntimeClasspath is JUnit only, matching
-// every other test in this project). Constructing the explicit-table rules eagerly invokes their suppliers, which read
-// MobEffects.* holders, so those entries cannot be resolved here without a NoClassDefFoundError. The catch-all paths
-// that do not build an EffectSpec (config ZOMBIE_FOODS -> CARRION, unknown -> HUMAN_COOKED) ARE Minecraft-free and are
-// exercised below, alongside the tier tooltip mapping, the always-edible set, and the preservation records.
+// every other test in this project). Constructing the explicit-table rules eagerly runs their lambdas, which resolve
+// EffectIds via the effect resolver into MobEffects.* holders, so those entries cannot be resolved here without a
+// NoClassDefFoundError. The catch-all paths that build no EffectSpec (config ZOMBIE_FOODS -> CARRION, unknown ->
+// HUMAN_COOKED non-sweet) ARE Minecraft-free and never touch the resolver, so a THROWING resolver is passed to prove
+// it is not exercised; the tier tooltip mapping, the always-edible set, and the preservation records are checked too.
 class ZombieFoodRulesTest {
+
+    // These Minecraft-free catch-all paths never resolve an EffectId, so the resolver must never be called.
+    private static final Function<EffectId, dev.molang.iamzombieq.rules.EffectSpec> NEVER_RESOLVED =
+            id -> {
+                throw new AssertionError("Minecraft-free catch-all path must not resolve an effect: " + id);
+            };
+    // These same catch-all paths build no EffectId, so they never consult the config resolver either.
+    private static final ToIntFunction<String> NEVER_CONFIG =
+            key -> {
+                throw new AssertionError("Minecraft-free catch-all path must not read config: " + key);
+            };
 
     private static FoodRule carrionRule() {
         // Reached via the config ZOMBIE_FOODS catch-all for an id absent from the explicit table: no EffectSpec built.
-        return ZombieFoodRules.ruleFor("modid:custom_raw_meat", Set.of("modid:custom_raw_meat"));
+        return ZombieFoodRules.ruleFor("modid:custom_raw_meat", Set.of("modid:custom_raw_meat"), NEVER_RESOLVED, NEVER_CONFIG);
     }
 
     private static FoodRule humanCookedDefaultRule() {
         // Reached via the DEFAULT catch-all for an unknown, non-sweet id: no EffectSpec built.
-        return ZombieFoodRules.ruleFor("modid:some_unknown_food", Set.of());
+        return ZombieFoodRules.ruleFor("modid:some_unknown_food", Set.of(), NEVER_RESOLVED, NEVER_CONFIG);
     }
 
     private static FoodRule forageRule() {

@@ -1,5 +1,4 @@
 package dev.molang.iamzombieq.rules;
-import dev.molang.iamzombieq.rules.difficulty.GameDifficulty;
 import dev.molang.iamzombieq.rules.core.ZombieForm;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -14,19 +13,19 @@ class ZombieBalanceRulesTest {
     private static final double EPSILON = 0.0000001;
 
     @Test
+    void namedPlayerBalanceConstantsRetainTheirGameplayValues() {
+        assertEquals(220, ZombieBalanceRules.EFFECT_REFRESH_MARGIN_TICKS);
+        assertEquals(300, ZombieBalanceRules.HUSK_MELEE_HUNGER_DURATION_TICKS);
+        assertEquals(8.0F, ZombieBalanceRules.SUNLIGHT_BURN_DURATION_SECONDS);
+        assertEquals(0.5F, ZombieBalanceRules.EVOLUTION_RESPAWN_HEALTH_FRACTION);
+    }
+
+    @Test
     void innateArmorMatchesCapturedChoices() {
         assertEquals(2, ZombieBalanceRules.innateArmor(ZombieForm.NORMAL));
         assertEquals(2, ZombieBalanceRules.innateArmor(ZombieForm.DROWNED));
         assertEquals(4, ZombieBalanceRules.innateArmor(ZombieForm.HUSK));
         assertEquals(2, ZombieBalanceRules.innateArmor(ZombieForm.ZOMBIFIED_PIGLIN));
-    }
-
-    @Test
-    void villagerAndHorseInfectionChanceMatchesDifficulty() {
-        assertEquals(0.25, ZombieBalanceRules.infectionChance(GameDifficulty.EASY));
-        assertEquals(0.50, ZombieBalanceRules.infectionChance(GameDifficulty.NORMAL));
-        assertEquals(1.00, ZombieBalanceRules.infectionChance(GameDifficulty.HARD));
-        assertEquals(0.00, ZombieBalanceRules.infectionChance(GameDifficulty.PEACEFUL));
     }
 
     @Test
@@ -49,70 +48,27 @@ class ZombieBalanceRulesTest {
     }
 
     @Test
-    void giantFormUsesGiantScaleHealthReachStepAndAttackDefaults() {
-        assertEquals(100.0, ZombieBalanceRules.maxHealth(ZombieForm.GIANT), EPSILON);
-        // Reach/step are scaled to the 6x body as their own explicit targets (设计指南 §2.4): block 4.5x6=27,
-        // entity 3.0x6=18, step 0.6x6=3.6. Attack is a flat (not difficulty-scaled) value, bumped to 55 in the
-        // strengthening pass to stay slightly above the Warden (vanilla melee 30); the stomp aura is 5.0/10.0.
-        assertEquals(27.0, ZombieBalanceRules.giantBlockInteractionRange(), EPSILON);
-        assertEquals(18.0, ZombieBalanceRules.giantEntityInteractionRange(), EPSILON);
-        assertEquals(3.6, ZombieBalanceRules.giantStepHeight(), EPSILON);
-        assertEquals(3.0, ZombieBalanceRules.giantSafeFallBonus(), EPSILON);
-        assertEquals(55.0, ZombieBalanceRules.giantAttackDamage(), EPSILON);
-        assertEquals(5.0, ZombieBalanceRules.giantAutoDamageRadius(), EPSILON);
-        assertEquals(10.0, ZombieBalanceRules.giantAutoDamageAmount(), EPSILON);
-        assertEquals(3, ZombieBalanceRules.giantBlockDestructionRadius());
-    }
-
-    @Test
-    void giantSwingDestructionDefaultsAreBoundedAndCoolDown() {
-        assertEquals(17, ZombieBalanceRules.giantSwingCubeEdge());
-        assertEquals(200, ZombieBalanceRules.giantSwingMaxBlocks());
-        assertEquals(25L, ZombieBalanceRules.giantSwingCooldownTicks());
-        assertEquals(256, ZombieBalanceRules.giantPassiveDestroyCapPerTick());
-    }
-
-    @Test
-    void giantPassiveReachConstantsAreTheWiderTallerFootprint() {
-        // The strengthening pass widens (X/Z) and heightens (Y) the passive walk-destruction footprint so the giant
-        // razes a bigger swath as it strides. The foot layer and below are still protected by giantDestroysBlockLayer.
-        assertEquals(2.0, ZombieBalanceRules.giantPassiveReachHorizontal(), EPSILON);
-        assertEquals(2.0, ZombieBalanceRules.giantPassiveReachVertical(), EPSILON);
-    }
-
-    @Test
-    void giantContactDestructionPreservesTheFootLayerAndBelow() {
-        // Foot (bounding-box min Y) at 64.0 → block layer 64 and anything below is preserved; layers above destroy.
-        double footY = 64.0;
-        assertFalse(ZombieBalanceRules.giantDestroysBlockLayer(63, footY), "below-foot layer is preserved");
-        assertFalse(ZombieBalanceRules.giantDestroysBlockLayer(64, footY), "foot layer itself is preserved");
-        assertTrue(ZombieBalanceRules.giantDestroysBlockLayer(65, footY), "body layers above the feet are destroyed");
-        assertTrue(ZombieBalanceRules.giantDestroysBlockLayer(70, footY), "upper body layers are destroyed");
-
-        // A fractional foot Y still preserves the cell that contains it.
-        assertFalse(ZombieBalanceRules.giantDestroysBlockLayer(64, 64.3), "fractional foot Y keeps its own cell");
-        assertTrue(ZombieBalanceRules.giantDestroysBlockLayer(65, 64.3));
-    }
-
-    @Test
-    void giantCrushKernelRespectsTagsBlacklistAndHardnessFallback() {
-        // (isAir, hasBlockEntity, isFluid, isSoftTag, isImmuneTag, destroySpeed, maxHardness)
-        float swing = ZombieBalanceRules.GIANT_SWING_MAX_HARDNESS;
-        float passive = ZombieBalanceRules.GIANT_PASSIVE_MAX_HARDNESS;
-        assertFalse(ZombieBalanceRules.giantCanCrush(true, false, false, false, false, 0.0F, swing), "air is never crushed");
-        assertFalse(ZombieBalanceRules.giantCanCrush(false, true, false, true, false, 0.0F, swing), "block entities (containers) are preserved even if soft-tagged");
-        assertFalse(ZombieBalanceRules.giantCanCrush(false, false, true, true, false, 0.0F, swing), "fluids are never crushed");
-        assertFalse(ZombieBalanceRules.giantCanCrush(false, false, false, true, true, 0.0F, swing), "GIANT_IMMUNE blacklist wins over the soft whitelist");
-        assertFalse(ZombieBalanceRules.giantCanCrush(false, false, false, false, false, -1.0F, swing), "unbreakable bedrock (negative hardness) is preserved");
-        assertFalse(ZombieBalanceRules.giantCanCrush(false, false, false, false, false, swing + 1.0F, swing), "very hard blocks (obsidian) are preserved");
-        // Soft-tagged blocks are always crushed regardless of hardness fallback.
-        assertTrue(ZombieBalanceRules.giantCanCrush(false, false, false, true, false, 100.0F, passive), "GIANT_SOFT whitelist is always crushable");
-        // The passive cap is now stone-tier: the WALKING giant razes stone (1.5) and cobblestone/stone-brick (2.0),
-        // but deepslate (3.0) and harder still stop it. The active swing breaks an even higher tier.
-        assertTrue(ZombieBalanceRules.giantCanCrush(false, false, false, false, false, 1.5F, passive), "stone (1.5) is razed by the WALKING giant (stone-tier passive cap)");
-        assertTrue(ZombieBalanceRules.giantCanCrush(false, false, false, false, false, 2.0F, passive), "cobblestone/stone-brick (2.0) is razed by the WALKING giant (boundary, <=)");
-        assertFalse(ZombieBalanceRules.giantCanCrush(false, false, false, false, false, 3.0F, passive), "deepslate (3.0) still stops the WALKING giant");
-        assertTrue(ZombieBalanceRules.giantCanCrush(false, false, false, false, false, 1.5F, swing), "untagged stone is also broken by the giant's SWING (high cap)");
+    void scaledDurabilityDamageMatchesTheAuthoritativeBoundaryTable() {
+        // Boundary table: scale by goldDurabilityConsumptionMultiplier(form) (ZOMBIFIED_PIGLIN
+        // 0.25, others 1.0), truncate, add 1 only when rd < the fractional remainder, then clamp to [0, amount].
+        // 4 * 0.25 = 1.0 → trunc 1, fraction 0.0; rd 0.999 < 0.0 false → 1; clamp[0,4] → 1
+        assertEquals(1, ZombieBalanceRules.scaledDurabilityDamage(4, ZombieForm.ZOMBIFIED_PIGLIN, 0.999));
+        // 5 * 0.25 = 1.25 → trunc 1, fraction 0.25; rd 0.2 < 0.25 true → 2; clamp[0,5] → 2
+        assertEquals(2, ZombieBalanceRules.scaledDurabilityDamage(5, ZombieForm.ZOMBIFIED_PIGLIN, 0.2));
+        // 5 * 0.25 = 1.25 → trunc 1, fraction 0.25; rd 0.3 < 0.25 false → 1; clamp[0,5] → 1
+        assertEquals(1, ZombieBalanceRules.scaledDurabilityDamage(5, ZombieForm.ZOMBIFIED_PIGLIN, 0.3));
+        // 0 * 0.25 = 0.0 → trunc 0, fraction 0.0; rd 0.5 < 0.0 false → 0; clamp[0,0] → 0
+        assertEquals(0, ZombieBalanceRules.scaledDurabilityDamage(0, ZombieForm.ZOMBIFIED_PIGLIN, 0.5));
+        // 1 * 0.25 = 0.25 → trunc 0, fraction 0.25; rd 0.0 < 0.25 true → 1; clamp[0,1] → 1
+        assertEquals(1, ZombieBalanceRules.scaledDurabilityDamage(1, ZombieForm.ZOMBIFIED_PIGLIN, 0.0));
+        // 1 * 0.25 = 0.25 → trunc 0, fraction 0.25; rd 0.3 < 0.25 false → 0; clamp[0,1] → 0
+        assertEquals(0, ZombieBalanceRules.scaledDurabilityDamage(1, ZombieForm.ZOMBIFIED_PIGLIN, 0.3));
+        // 2 * 1.0 = 2.0 → trunc 2, fraction 0.0; rd 0.5 < 0.0 false → 2; clamp[0,2] → 2
+        assertEquals(2, ZombieBalanceRules.scaledDurabilityDamage(2, ZombieForm.NORMAL, 0.5));
+        // 3 * 0.25 = 0.75 → trunc 0, fraction 0.75; rd 0.74 < 0.75 true → 1; clamp[0,3] → 1
+        assertEquals(1, ZombieBalanceRules.scaledDurabilityDamage(3, ZombieForm.ZOMBIFIED_PIGLIN, 0.74));
+        // 3 * 0.25 = 0.75 → trunc 0, fraction 0.75; rd 0.76 < 0.75 false → 0; clamp[0,3] → 0
+        assertEquals(0, ZombieBalanceRules.scaledDurabilityDamage(3, ZombieForm.ZOMBIFIED_PIGLIN, 0.76));
     }
 
     @Test

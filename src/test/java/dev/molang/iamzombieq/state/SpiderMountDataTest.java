@@ -33,7 +33,7 @@ class SpiderMountDataTest {
 
     @Test
     void legacySingleArgConstructorTreatsAnExistingOwnerAsFullyTamed() {
-        // B1 backward compatibility: an old save had only the "owner" key. Loading it via the single-arg
+        // Backward compatibility: an old save had only the "owner" key. Loading it via the single-arg
         // constructor must treat a present owner as already (instantly) tamed -> full progress.
         SpiderMountData legacyOwned = new SpiderMountData(OWNER.toString());
         assertTrue(legacyOwned.hasOwner());

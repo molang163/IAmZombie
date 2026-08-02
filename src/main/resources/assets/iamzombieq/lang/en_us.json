@@ -56,11 +56,8 @@
   "iamzombieq.message.mount.spider_taming": "The spider warms to you... (%s%%)",
   "iamzombieq.message.mount.spider_tamed": "Spider tamed — you can ride it now",
   "iamzombieq.message.peaceful_unsupported": "Zombies don't spawn in Peaceful mode.",
-  "iamzombieq.message.peaceful_warning": "Zombies don't spawn in Peaceful mode",
   "iamzombieq.message.peaceful_rejected": "How could zombies ever show up on Peaceful?",
-  "iamzombieq.tooltip.food.zombie": "Zombie food",
   "iamzombieq.tooltip.food.special": "Strange… and risky",
-  "iamzombieq.tooltip.food.human": "Probably a bad idea",
   "iamzombieq.tooltip.food.carrion": "Carrion — a feast",
   "iamzombieq.tooltip.food.forage": "Edible, unremarkable",
   "iamzombieq.tooltip.food.human_cooked": "Human cooking — revolting"

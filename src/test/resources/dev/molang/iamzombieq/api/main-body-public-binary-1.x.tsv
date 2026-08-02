@@ -1,0 +1,37 @@
+# Public compatibility baseline for the stable main-body API class-file shape in the 1.x line.
+# kind	owner	name	access	descriptor	signature
+CLASS	dev/molang/iamzombieq/api/core/IZombiePlayer	-	0x0601	-	-
+CLASS	dev/molang/iamzombieq/api/core/IZombiePlayerAPI	-	0x0031	-	-
+CLASS	dev/molang/iamzombieq/api/event/ZombieEvolvePreEvent	-	0x0031	-	-
+CLASS	dev/molang/iamzombieq/api/event/ZombieEvolvedEvent	-	0x0031	-	-
+CLASS	dev/molang/iamzombieq/api/event/ZombieTransformPreEvent	-	0x0031	-	-
+CLASS	dev/molang/iamzombieq/api/event/ZombieTransformedEvent	-	0x0031	-	-
+METHOD	dev/molang/iamzombieq/api/core/IZombiePlayer	claimReward	0x0401	(Ldev/molang/iamzombieq/rules/core/ZombieForm;)Z	-
+METHOD	dev/molang/iamzombieq/api/core/IZombiePlayer	evolveFromDeath	0x0401	(Ldev/molang/iamzombieq/rules/core/ZombieState;Ldev/molang/iamzombieq/rules/DeathOutcome;)Z	-
+METHOD	dev/molang/iamzombieq/api/core/IZombiePlayer	form	0x0401	()Ldev/molang/iamzombieq/rules/core/ZombieForm;	-
+METHOD	dev/molang/iamzombieq/api/core/IZombiePlayer	hasReceivedFirstReward	0x0401	(Ldev/molang/iamzombieq/rules/core/ZombieForm;)Z	-
+METHOD	dev/molang/iamzombieq/api/core/IZombiePlayer	isZombie	0x0401	()Z	-
+METHOD	dev/molang/iamzombieq/api/core/IZombiePlayer	resetAfterOrdinaryDeath	0x0401	()Z	-
+METHOD	dev/molang/iamzombieq/api/core/IZombiePlayer	setSize	0x0401	(Ldev/molang/iamzombieq/rules/core/ZombieSize;)Z	-
+METHOD	dev/molang/iamzombieq/api/core/IZombiePlayer	size	0x0401	()Ldev/molang/iamzombieq/rules/core/ZombieSize;	-
+METHOD	dev/molang/iamzombieq/api/core/IZombiePlayer	state	0x0401	()Ldev/molang/iamzombieq/rules/core/ZombieState;	-
+METHOD	dev/molang/iamzombieq/api/core/IZombiePlayer	transformToForm	0x0401	(Ldev/molang/iamzombieq/rules/core/ZombieForm;)Z	-
+METHOD	dev/molang/iamzombieq/api/core/IZombiePlayerAPI	get	0x0009	(Lnet/minecraft/server/level/ServerPlayer;)Ldev/molang/iamzombieq/api/core/IZombiePlayer;	-
+METHOD	dev/molang/iamzombieq/api/event/ZombieEvolvePreEvent	<init>	0x0001	(Lnet/minecraft/server/level/ServerPlayer;Ldev/molang/iamzombieq/rules/core/ZombieState;Ldev/molang/iamzombieq/rules/core/ZombieState;Ldev/molang/iamzombieq/rules/DeathOutcome;)V	-
+METHOD	dev/molang/iamzombieq/api/event/ZombieEvolvePreEvent	after	0x0001	()Ldev/molang/iamzombieq/rules/core/ZombieState;	-
+METHOD	dev/molang/iamzombieq/api/event/ZombieEvolvePreEvent	before	0x0001	()Ldev/molang/iamzombieq/rules/core/ZombieState;	-
+METHOD	dev/molang/iamzombieq/api/event/ZombieEvolvePreEvent	outcome	0x0001	()Ldev/molang/iamzombieq/rules/DeathOutcome;	-
+METHOD	dev/molang/iamzombieq/api/event/ZombieEvolvePreEvent	player	0x0001	()Lnet/minecraft/server/level/ServerPlayer;	-
+METHOD	dev/molang/iamzombieq/api/event/ZombieEvolvedEvent	<init>	0x0001	(Lnet/minecraft/server/level/ServerPlayer;Ldev/molang/iamzombieq/rules/core/ZombieState;Ldev/molang/iamzombieq/rules/core/ZombieState;Ldev/molang/iamzombieq/rules/DeathOutcome;)V	-
+METHOD	dev/molang/iamzombieq/api/event/ZombieEvolvedEvent	after	0x0001	()Ldev/molang/iamzombieq/rules/core/ZombieState;	-
+METHOD	dev/molang/iamzombieq/api/event/ZombieEvolvedEvent	before	0x0001	()Ldev/molang/iamzombieq/rules/core/ZombieState;	-
+METHOD	dev/molang/iamzombieq/api/event/ZombieEvolvedEvent	outcome	0x0001	()Ldev/molang/iamzombieq/rules/DeathOutcome;	-
+METHOD	dev/molang/iamzombieq/api/event/ZombieEvolvedEvent	player	0x0001	()Lnet/minecraft/server/level/ServerPlayer;	-
+METHOD	dev/molang/iamzombieq/api/event/ZombieTransformPreEvent	<init>	0x0001	(Lnet/minecraft/server/level/ServerPlayer;Ldev/molang/iamzombieq/rules/core/ZombieForm;Ldev/molang/iamzombieq/rules/core/ZombieForm;)V	-
+METHOD	dev/molang/iamzombieq/api/event/ZombieTransformPreEvent	from	0x0001	()Ldev/molang/iamzombieq/rules/core/ZombieForm;	-
+METHOD	dev/molang/iamzombieq/api/event/ZombieTransformPreEvent	player	0x0001	()Lnet/minecraft/server/level/ServerPlayer;	-
+METHOD	dev/molang/iamzombieq/api/event/ZombieTransformPreEvent	to	0x0001	()Ldev/molang/iamzombieq/rules/core/ZombieForm;	-
+METHOD	dev/molang/iamzombieq/api/event/ZombieTransformedEvent	<init>	0x0001	(Lnet/minecraft/server/level/ServerPlayer;Ldev/molang/iamzombieq/rules/core/ZombieForm;Ldev/molang/iamzombieq/rules/core/ZombieForm;)V	-
+METHOD	dev/molang/iamzombieq/api/event/ZombieTransformedEvent	from	0x0001	()Ldev/molang/iamzombieq/rules/core/ZombieForm;	-
+METHOD	dev/molang/iamzombieq/api/event/ZombieTransformedEvent	player	0x0001	()Lnet/minecraft/server/level/ServerPlayer;	-
+METHOD	dev/molang/iamzombieq/api/event/ZombieTransformedEvent	to	0x0001	()Ldev/molang/iamzombieq/rules/core/ZombieForm;	-

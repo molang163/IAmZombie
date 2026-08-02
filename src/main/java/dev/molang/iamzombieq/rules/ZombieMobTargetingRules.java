@@ -1,24 +1,6 @@
 package dev.molang.iamzombieq.rules;
 import dev.molang.iamzombieq.rules.core.ZombieForm;
 
-import dev.molang.iamzombieq.state.PlayerZombieData;
-import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.Mob;
-import net.minecraft.world.entity.animal.axolotl.Axolotl;
-import net.minecraft.world.entity.animal.equine.TraderLlama;
-import net.minecraft.world.entity.animal.goat.Goat;
-import net.minecraft.world.entity.animal.golem.IronGolem;
-import net.minecraft.world.entity.animal.golem.SnowGolem;
-import net.minecraft.world.entity.animal.polarbear.PolarBear;
-import net.minecraft.world.entity.boss.wither.WitherBoss;
-import net.minecraft.world.entity.monster.Creeper;
-import net.minecraft.world.entity.monster.EnderMan;
-import net.minecraft.world.entity.monster.Endermite;
-import net.minecraft.world.entity.monster.Zoglin;
-import net.minecraft.world.entity.monster.warden.Warden;
-import net.minecraft.world.entity.monster.zombie.Drowned;
-import net.minecraft.world.entity.player.Player;
-
 /**
  * "Who attacks the zombie player?" — the unconditional-attacker (①) matrix from the undead-four relationship table
  * (亡灵四生物关系 · 无条件攻击版), treating the player as its current form. The closed attacker set is:
@@ -46,8 +28,9 @@ import net.minecraft.world.entity.player.Player;
  * neutral anger always OVERRIDE the ignore so genuine fights still resolve.
  *
  * <p>The {@link MobKind}-keyed {@link #attacksZombiePlayer}/{@link #shouldIgnore} core is registry-free and fully
- * unit-testable; the {@link LivingEntity}-typed {@link #classify}/{@link #shouldIgnoreZombiePlayer} adapters bridge
- * to live mobs. {@link #needsActiveSeeding} marks the attackers that will NOT naturally target a {@code Player}
+ * unit-testable; the {@code LivingEntity}-typed {@code classify}/{@code shouldIgnoreZombiePlayer} adapters (which
+ * bridge to live mobs) live in {@code gameplay.ZombieMobTargetingAdapter} so this class stays Minecraft-free.
+ * {@link #needsActiveSeeding} marks the attackers that will NOT naturally target a {@code Player}
  * (iron/snow golem, trader llama, axolotl) and so must be actively pointed at the player by the targeting handler;
  * creeper/zoglin acquire the player on their own, and the goat rams via its brain.
  */
@@ -117,6 +100,33 @@ public final class ZombieMobTargetingRules {
     }
 
     /**
+     * Registry-free classification of a mob by its vanilla entity-type id string (e.g. {@code "minecraft:creeper"}).
+     * Mirrors the {@code instanceof} chain in {@code gameplay.ZombieMobTargetingAdapter#classify} for every EXACT
+     * vanilla type in the ① attacker table; any unknown / near-miss / other-namespace / null id maps to
+     * {@link MobKind#IGNORED}. The adapter delegates here for the fast path and only falls back to {@code instanceof}
+     * for unknown ids (mod subclasses of these vanilla types), so the two can never diverge on the known types.
+     */
+    public static MobKind classifyByEntityTypeId(String entityTypeId) {
+        if (entityTypeId == null) {
+            return MobKind.IGNORED;
+        }
+        return switch (entityTypeId) {
+            case "minecraft:iron_golem" -> MobKind.IRON_GOLEM;
+            case "minecraft:snow_golem" -> MobKind.SNOW_GOLEM;
+            case "minecraft:zoglin" -> MobKind.ZOGLIN;
+            case "minecraft:goat" -> MobKind.GOAT;
+            // Endermite (from a thrown ender pearl) attacks every form; it reuses the all-forms CREEPER row.
+            case "minecraft:creeper", "minecraft:endermite" -> MobKind.CREEPER;
+            // A plain llama is NOT a trader llama and stays IGNORED (only the trader_llama id maps here).
+            case "minecraft:trader_llama" -> MobKind.TRADER_LLAMA;
+            case "minecraft:axolotl" -> MobKind.AXOLOTL;
+            case "minecraft:warden", "minecraft:wither" -> MobKind.BOSS;
+            case "minecraft:enderman", "minecraft:polar_bear" -> MobKind.PROVOKED_SELF_TARGETING;
+            default -> MobKind.IGNORED;
+        };
+    }
+
+    /**
      * Registry-free deny-list core: should this mob be stopped from targeting the zombie player? Retaliation and
      * neutral anger always override (allow the fight); otherwise the mob is ignored unless it is in the attacker
      * matrix for this form.
@@ -127,94 +137,21 @@ public final class ZombieMobTargetingRules {
             boolean retaliating,
             boolean angeredNeutral
     ) {
-        if (retaliating || angeredNeutral) {
+        return shouldIgnore(
+                kind,
+                form,
+                new TargetingOverrides(retaliating, angeredNeutral)
+        );
+    }
+
+    public static boolean shouldIgnore(
+            MobKind kind,
+            ZombieForm form,
+            TargetingOverrides overrides
+    ) {
+        if (overrides.retaliating() || overrides.angeredNeutral()) {
             return false;
         }
         return !attacksZombiePlayer(kind, form);
-    }
-
-    /**
-     * Live adapter: classify the mob and decide whether it must be stopped from targeting the zombie player.
-     * {@code retaliating}/{@code angeredNeutral} are supplied by the handler (which has the server level needed to
-     * evaluate neutral anger). The disguise mask no longer affects targeting (it is too crude to fool any mob); it
-     * only gates villager trading elsewhere.
-     */
-    public static boolean shouldIgnoreZombiePlayer(
-            LivingEntity mob,
-            Player player,
-            PlayerZombieData data,
-            boolean retaliating,
-            boolean angeredNeutral
-    ) {
-        return shouldIgnore(classify(mob), data.state().form(), retaliating, angeredNeutral);
-    }
-
-    /** Classify a live mob into the {@link MobKind} the decision core understands. */
-    public static MobKind classify(LivingEntity mob) {
-        if (mob instanceof IronGolem) {
-            return MobKind.IRON_GOLEM;
-        }
-        if (mob instanceof SnowGolem) {
-            return MobKind.SNOW_GOLEM;
-        }
-        if (mob instanceof Zoglin) {
-            return MobKind.ZOGLIN;
-        }
-        if (mob instanceof Goat) {
-            return MobKind.GOAT;
-        }
-        if (mob instanceof Creeper) {
-            return MobKind.CREEPER;
-        }
-        // Endermite (spawned by chance from a thrown ender pearl) attacks every form; reuse the all-forms
-        // CREEPER row rather than adding a dedicated enum constant.
-        if (mob instanceof Endermite) {
-            return MobKind.CREEPER;
-        }
-        // TraderLlama is a subclass of Llama; a plain Llama is NOT a trader llama and stays IGNORED.
-        if (mob instanceof TraderLlama) {
-            return MobKind.TRADER_LLAMA;
-        }
-        if (mob instanceof Axolotl) {
-            return MobKind.AXOLOTL;
-        }
-        if (mob instanceof Warden || mob instanceof WitherBoss) {
-            return MobKind.BOSS;
-        }
-        // Enderman (eye-contact) + polar bear (cub defense) target the player only when provoked, via a direct
-        // anger-less target that the handler's angeredNeutral/isAngryAt check misses — so they must not be cancelled.
-        if (mob instanceof EnderMan || mob instanceof PolarBear) {
-            return MobKind.PROVOKED_SELF_TARGETING;
-        }
-        return MobKind.IGNORED;
-    }
-
-    // ---------------------------------------------------------------------------------------------------------
-    // Drowned trident friendly-fire (N9 / N10)
-    // ---------------------------------------------------------------------------------------------------------
-
-    /**
-     * N9: two Drowned must not start fighting each other from a Drowned's trident friendly-fire. Returns true
-     * when both the targeting mob and the about-to-be-set target are Drowned, so the handler can clear the
-     * target. {@code retaliating} is honoured: if one Drowned was genuinely struck by the other in melee (so it
-     * is the target's last attacker) we let the fight stand rather than masking it.
-     */
-    public static boolean isInterDrownedFriendlyFire(LivingEntity mob, LivingEntity newTarget, boolean retaliating) {
-        if (retaliating) {
-            return false;
-        }
-        return mob instanceof Drowned && newTarget instanceof Drowned;
-    }
-
-    /**
-     * N10: should this nearby Drowned be recruited to attack the offending Drowned? True when the candidate is a
-     * living Drowned that currently has no target (so we never steal an in-progress fight) and is not the
-     * offender itself.
-     */
-    public static boolean shouldRallyToAttackDrowned(Mob candidate, Drowned offender) {
-        return candidate instanceof Drowned
-                && candidate.isAlive()
-                && candidate != offender
-                && candidate.getTarget() == null;
     }
 }

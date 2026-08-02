@@ -5,7 +5,7 @@ import net.minecraft.server.level.ServerPlayer;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * Public entry point to the zombie-player facade (design §4.2). Call {@link #get(ServerPlayer)} on the server
+ * Public entry point to the zombie-player facade. Call {@link #get(ServerPlayer)} on the server
  * thread to obtain the server-authoritative {@link IZombiePlayer} view of a player.
  *
  * <p><b>Server-thread-only.</b> The returned facade is FakePlayer-safe: a FakePlayer is a {@code ServerPlayer},

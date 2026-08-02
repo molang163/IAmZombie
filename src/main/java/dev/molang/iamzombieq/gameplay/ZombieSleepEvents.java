@@ -1,8 +1,9 @@
 package dev.molang.iamzombieq.gameplay;
 
-import dev.molang.iamzombieq.IAmZombieConfig;
+import dev.molang.iamzombieq.IAmZombieServerConfig;
 import dev.molang.iamzombieq.rules.sleep.SleepAction;
 import dev.molang.iamzombieq.rules.sleep.ZombieSleepRules;
+import dev.molang.iamzombieq.util.ZombiePlayerGates;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
@@ -56,7 +57,7 @@ public final class ZombieSleepEvents {
     }
 
     private static boolean isZombiePlayer(Player player) {
-        return !player.isSpectator();
+        return ZombiePlayerGates.isZombiePlayer(player);
     }
 
     private static void explodeBed(Level level, BlockPos clickedPos, BlockState clickedState) {
@@ -76,8 +77,8 @@ public final class ZombieSleepEvents {
 
         Vec3 boomPos = Vec3.atCenterOf(headPos);
         ZombieSleepRules.BedExplosionSettings settings = ZombieSleepRules.bedExplosionSettings(
-                IAmZombieConfig.BED_EXPLOSION_POWER.get().floatValue(),
-                IAmZombieConfig.BED_EXPLOSION_CAUSES_FIRE.get()
+                IAmZombieServerConfig.BED_EXPLOSION_POWER.get().floatValue(),
+                IAmZombieServerConfig.BED_EXPLOSION_CAUSES_FIRE.get()
         );
         level.explode(null, level.damageSources().badRespawnPointExplosion(boomPos), null, boomPos, settings.power(), settings.causesFire(), Level.ExplosionInteraction.BLOCK);
     }

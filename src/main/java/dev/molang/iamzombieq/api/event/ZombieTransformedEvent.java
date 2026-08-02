@@ -6,7 +6,7 @@ import net.neoforged.bus.api.Event;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * Observer event fired AFTER a player's form has been changed and synced (design §5.a). Not cancellable; treat
+ * Observer event fired after a player's form has been changed and synced. Not cancellable; treat
  * its fields as a read-only snapshot (the authoritative change has already been applied and synced to the client).
  *
  * <p>Posted on the native {@code NeoForge.EVENT_BUS}; subscribe with {@code @SubscribeEvent}.
