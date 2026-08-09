@@ -3,7 +3,10 @@ import dev.molang.iamzombieq.util.ModIds;
 
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.state.ArmedEntityRenderState;
+//? if >=1.21.10
 import net.minecraft.client.renderer.entity.state.AvatarRenderState;
+//? if <1.21.10
+//import net.minecraft.client.renderer.entity.state.PlayerRenderState;
 import net.minecraft.client.renderer.entity.state.EntityRenderState;
 import net.minecraft.client.renderer.entity.state.HumanoidRenderState;
 import net.minecraft.client.renderer.entity.state.LivingEntityRenderState;
@@ -28,15 +31,24 @@ public record ZombiePlayerRenderReplacement(
             ModIds.id("shape_swim_tilt")
     );
 
+    //? if >=1.21.10
     public static void set(AvatarRenderState state, ZombiePlayerRenderReplacement replacement) {
+    //? if <1.21.10
+    //public static void set(PlayerRenderState state, ZombiePlayerRenderReplacement replacement) {
         ((IRenderStateExtension) state).setRenderData(KEY, replacement);
     }
 
+    //? if >=1.21.10
     public static ZombiePlayerRenderReplacement get(AvatarRenderState state) {
+    //? if <1.21.10
+    //public static ZombiePlayerRenderReplacement get(PlayerRenderState state) {
         return ((IRenderStateExtension) state).getRenderData(KEY);
     }
 
+    //? if >=1.21.10
     public static void copyAvatarAnimation(AvatarRenderState avatar, EntityRenderState shape) {
+    //? if <1.21.10
+    //public static void copyAvatarAnimation(PlayerRenderState avatar, EntityRenderState shape) {
         if (shape instanceof LivingEntityRenderState livingShape) {
             livingShape.pose = avatar.pose;
             livingShape.walkAnimationPos = avatar.walkAnimationPos;

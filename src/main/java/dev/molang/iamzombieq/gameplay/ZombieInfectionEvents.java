@@ -23,14 +23,18 @@ import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.ConversionParams;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
+//? if >=26.2
 import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.animal.equine.Horse;
 import net.minecraft.world.entity.animal.equine.ZombieHorse;
+// CROSS_VERSION-NAUTILUS-CAPABILITY:infection-imports
+//? if >=1.21.11 {
 import net.minecraft.world.entity.animal.nautilus.Nautilus;
 import net.minecraft.world.entity.animal.nautilus.ZombieNautilus;
+//?}
 import net.minecraft.world.entity.animal.pig.Pig;
 import net.minecraft.world.entity.monster.piglin.AbstractPiglin;
 import net.minecraft.world.entity.monster.zombie.Zombie;
@@ -38,6 +42,10 @@ import net.minecraft.world.entity.monster.zombie.ZombieVillager;
 import net.minecraft.world.entity.monster.zombie.ZombifiedPiglin;
 import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.entity.player.Player;
+//? if <1.21.11 {
+/*import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+*///?}
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.EventHooks;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
@@ -79,9 +87,13 @@ public final class ZombieInfectionEvents {
             tryInfectIntoZombifiedPiglin(event, level, mob, player);
         } else if (victim instanceof Horse horse) {
             tryInfectHorse(event, level, horse, player);
-        } else if (victim instanceof Nautilus nautilus) {
+        }
+        // CROSS_VERSION-NAUTILUS-CAPABILITY:infection-dispatch
+        //? if >=1.21.11 {
+        else if (victim instanceof Nautilus nautilus) {
             tryInfectNautilus(event, level, nautilus, player);
         }
+        //?}
     }
 
     private static void tryInfectVillager(LivingDeathEvent event, ServerLevel level, Villager villager, Player player) {
@@ -113,11 +125,14 @@ public final class ZombieInfectionEvents {
 
     // Migrated from ZombieMountEvents. No advancement exists for the nautilus infection, so the pipeline's
     // advancement step is skipped (null).
+    // CROSS_VERSION-NAUTILUS-CAPABILITY:infection-pipeline-adapter
+    //? if >=1.21.11 {
     private static void tryInfectNautilus(LivingDeathEvent event, ServerLevel level, Nautilus nautilus, Player player) {
         runInfectionPipeline(event, level, nautilus, player, EntityTypes.ZOMBIE_NAUTILUS,
                 () -> convertNautilusToZombieNautilus(level, nautilus, player),
                 null);
     }
+    //?}
 
     /**
      * Shared infection pipeline shell for all four infection paths (villager, pig/piglin, horse, nautilus), in
@@ -208,6 +223,7 @@ public final class ZombieInfectionEvents {
                 EntityTypes.ZOMBIE_VILLAGER,
                 ConversionParams.single(villager, true, true),
                 zombie -> {
+                    //? if >=26.2
                     zombie.setVillagerDataFinalized(villager.getVillagerDataFinalized());
                     zombie.finalizeSpawn(
                             level,
@@ -236,7 +252,7 @@ public final class ZombieInfectionEvents {
     }
 
     // Mirrors vanilla Pig#thunderHit's pig -> zombified piglin conversion (ConversionParams.single(victim, false, true):
-    // keepEquipment=false, preserveCanPickUpLoot=true; populateDefaultEquipmentSlots + setPersistenceRequired) and the villager pattern above
+    // keepEquipment=false, preserveCanPickUpLoot=true; node-native default equipment + setPersistenceRequired) and the villager pattern above
     // (conversion levelEvent only). The converted mob is seeded with NO attacker, so the kin zombie player stays
     // ignored from tick one. The one residual provoker is the same swing's Sweeping-Edge sweep, which clips
     // the freshly-spawned kin a moment later in the same Player.attack call; the conversion grace window recorded
@@ -249,12 +265,17 @@ public final class ZombieInfectionEvents {
                 EntityTypes.ZOMBIFIED_PIGLIN,
                 ConversionParams.single(victim, false, true),
                 piglin -> {
+                    // CROSS_VERSION-ZOMBIFIED-PIGLIN-DEFAULT-EQUIPMENT-API
+                    //? if <1.21.11 {
+                    /*piglin.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.GOLDEN_SWORD));
+                    *///?} else {
                     piglin.populateDefaultEquipmentSlots(victim.getRandom(), level.getCurrentDifficultyAt(piglin.blockPosition()));
+                    //?}
                     // Do NOT call finalizeSpawn here (mirrors vanilla Pig#thunderHit, which never does): with null group
                     // data it rolls a spurious ~5% baby (#3), and its unconditional handleAttributes (random
                     // reinforcement/FOLLOW_RANGE modifiers) + Halloween-head roll drift the converted piglin from the
-                    // vanilla thunder-hit result (#4). The golden sword is already set by populateDefaultEquipmentSlots
-                    // above (finalizeSpawn skips equipment on CONVERSION anyway), so dropping the call loses nothing.
+                    // vanilla thunder-hit result (#4). The node-native equipment is already assigned by the seam above
+                    // (finalizeSpawn skips equipment on CONVERSION anyway), so dropping the call loses nothing.
                     piglin.setPersistenceRequired();
                     EventHooks.onLivingConvert(victim, piglin);
                     if (!victim.isSilent()) {
@@ -300,7 +321,10 @@ public final class ZombieInfectionEvents {
         }
     }
 
-    private static boolean convertNautilusToZombieNautilus(ServerLevel level, Nautilus nautilus, Player owner) {
+    // CROSS_VERSION-NAUTILUS-CAPABILITY:infection-converter
+    //? if >=1.21.11 {
+    private static boolean convertNautilusToZombieNautilus(
+            ServerLevel level, Nautilus nautilus, Player owner) {
         ZombieNautilus zombieNautilus = EntityTypes.ZOMBIE_NAUTILUS.create(level, EntitySpawnReason.CONVERSION);
         if (zombieNautilus == null) {
             return false;
@@ -327,4 +351,5 @@ public final class ZombieInfectionEvents {
         level.levelEvent(null, 1026, nautilus.blockPosition(), 0);
         return true;
     }
+    //?}
 }

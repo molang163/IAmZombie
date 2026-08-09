@@ -22,16 +22,49 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ServerConfigurationPacketListenerImpl.class)
 abstract class ServerConfigurationPacketListenerMixin {
     private static final MethodHandle BEGIN_SERVER_CONFIGURATION =
-            iamzombieq$authorityHandle();
+            iamzombieq$authorityHandle(
+                    "beginServerConfiguration",
+                    MethodType.methodType(
+                            ConfigurationTask.class,
+                            Connection.class));
+
+    //? if <1.21.10 {
+    /*private static final MethodHandle TICK_LEGACY_SERVER_CONFIGURATION =
+            iamzombieq$authorityHandle(
+                    "tickLegacyServerConfiguration",
+                    MethodType.methodType(
+                            void.class,
+                            ConfigurationTask.class,
+                            ServerConfigurationPacketListenerImpl.class));
+    *///?}
 
     @Shadow @Final private Queue<ConfigurationTask> configurationTasks;
+
+    //? if <1.21.10 {
+    /*@Shadow private ConfigurationTask currentTask;
+    *///?}
 
     @Inject(
             method = "returnToWorld()V",
             at = @At("HEAD"),
             require = 1)
-    private void iamzombieq$queueAuthorityTask(
+    private void iamzombieq$queueAuthorityOnReturn(
             CallbackInfo callback) {
+        iamzombieq$queueAuthorityTask();
+    }
+
+    //? if <1.21.10 {
+    /*@Inject(
+            method = "addOptionalTasks()V",
+            at = @At("RETURN"),
+            require = 1)
+    private void iamzombieq$queueInitialAuthority(
+            CallbackInfo callback) {
+        iamzombieq$queueAuthorityTask();
+    }
+    *///?}
+
+    private void iamzombieq$queueAuthorityTask() {
         ServerConfigurationPacketListenerImpl listener =
                 (ServerConfigurationPacketListenerImpl) (Object) this;
         Connection connection = listener.getConnection();
@@ -45,7 +78,26 @@ abstract class ServerConfigurationPacketListenerMixin {
         }
     }
 
-    private static MethodHandle iamzombieq$authorityHandle() {
+    //? if <1.21.10 {
+    /*@Inject(
+            method = "tick()V",
+            at = @At("RETURN"),
+            require = 1)
+    private void iamzombieq$tickAuthorityTask(
+            CallbackInfo callback) {
+        ServerConfigurationPacketListenerImpl listener =
+                (ServerConfigurationPacketListenerImpl) (Object) this;
+        try {
+            TICK_LEGACY_SERVER_CONFIGURATION.invokeExact(
+                    currentTask, listener);
+        } catch (Throwable failure) {
+            throw iamzombieq$failClosed(failure);
+        }
+    }
+    *///?}
+
+    private static MethodHandle iamzombieq$authorityHandle(
+            String methodName, MethodType methodType) {
         try {
             Class<?> runtime = Class.forName(
                     "dev.molang.iamzombieq.config.ConfigAuthorityRuntime",
@@ -56,10 +108,8 @@ abstract class ServerConfigurationPacketListenerMixin {
                     runtime, MethodHandles.lookup());
             return lookup.findStatic(
                     runtime,
-                    "beginServerConfiguration",
-                    MethodType.methodType(
-                            ConfigurationTask.class,
-                            Connection.class));
+                    methodName,
+                    methodType);
         } catch (ReflectiveOperationException failure) {
             throw new ExceptionInInitializerError(failure);
         }

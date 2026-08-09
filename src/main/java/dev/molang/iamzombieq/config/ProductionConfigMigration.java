@@ -35,6 +35,10 @@ final class ProductionConfigMigration {
                 freshReturnCheckpoint, "freshReturnCheckpoint");
         Path legacy = ActualTargetResolver.fixedChild(
                 global, ActualTargetResolver.LEGACY_BASENAME);
+        MigrationJavaRuntimeMatrix.requireSupported(
+                legacy,
+                ActualTargetResolver.fixedChild(
+                        world, ActualTargetResolver.SERVER_BASENAME));
         try (ProductionPort port =
                 ProductionPort.server(global, world, legacy)) {
             return execute(
@@ -48,6 +52,11 @@ final class ProductionConfigMigration {
                 globalConfigParent, "global config parent");
         Path legacy = ActualTargetResolver.fixedChild(
                 global, ActualTargetResolver.LEGACY_BASENAME);
+        MigrationJavaRuntimeMatrix.requireSupported(
+                legacy,
+                ActualTargetResolver.fixedChild(
+                        global,
+                        ActualTargetResolver.PREFERENCES_BASENAME));
         try (ProductionPort port =
                 ProductionPort.preferences(global, legacy)) {
             return execute(

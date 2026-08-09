@@ -1,12 +1,16 @@
 package dev.molang.iamzombieq.mixin.client;
 
+//? if >=1.21.10 {
 import com.mojang.blaze3d.vertex.PoseStack;
 import dev.molang.iamzombieq.client.ZombiePlayerRenderReplacement;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.entity.player.AvatarRenderer;
 import net.minecraft.client.renderer.entity.state.AvatarRenderState;
 import net.minecraft.client.renderer.entity.state.LivingEntityRenderState;
+//? if >=26.1
 import net.minecraft.client.renderer.state.level.CameraRenderState;
+//? if >=1.21.10 && <26.1
+//import net.minecraft.client.renderer.state.CameraRenderState;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -43,3 +47,4 @@ abstract class AvatarRendererMixin {
         callback.cancel();
     }
 }
+//?}

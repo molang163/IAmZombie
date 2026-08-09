@@ -1,6 +1,9 @@
 package dev.molang.iamzombieq;
 import dev.molang.iamzombieq.rules.DisguiseRules;
 import dev.molang.iamzombieq.util.ModIds;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.function.UnaryOperator;
 
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
@@ -29,13 +32,13 @@ public final class IAmZombieItems {
     public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(IAmZombieMod.MOD_ID);
     private static final Identifier OP_BLOCKS_TAB = Identifier.fromNamespaceAndPath("minecraft", "op_blocks");
 
-    public static final DeferredItem<BlockItem> COFFIN = ITEMS.registerItem(
+    public static final DeferredItem<BlockItem> COFFIN = registerItem(
             "coffin",
             properties -> new BlockItem(IAmZombieBlocks.COFFIN.get(), properties),
             () -> new Item.Properties().stacksTo(1)
     );
 
-    public static final DeferredItem<Item> SUPER_ROTTEN_FLESH = ITEMS.registerSimpleItem(
+    public static final DeferredItem<Item> SUPER_ROTTEN_FLESH = registerSimpleItem(
             "super_rotten_flesh",
             properties -> properties.food(new FoodProperties.Builder()
                     .alwaysEdible()
@@ -48,7 +51,7 @@ public final class IAmZombieItems {
     // way, while staying equippable on the head (its sun-block protection) and unbreakable. Registry id, the
     // "item.iamzombieq.herobrine_head" translation, the sun-block hook (headStack.is(HEROBRINE_HEAD.get())) and
     // the creative-tab entries are all preserved — StandingAndWallBlockItem is still an Item.
-    public static final DeferredItem<StandingAndWallBlockItem> HEROBRINE_HEAD = ITEMS.registerItem(
+    public static final DeferredItem<StandingAndWallBlockItem> HEROBRINE_HEAD = registerItem(
             "herobrine_head",
             properties -> new StandingAndWallBlockItem(
                     IAmZombieBlocks.HEROBRINE_HEAD.get(),
@@ -63,7 +66,7 @@ public final class IAmZombieItems {
     // The disguise_mask registration path AND its equipment-asset id both flow from the single
     // DisguiseRules.DISGUISE_MASK_PATH constant, so the item id, the equip material id and DisguiseRules.DISGUISE_MASK_ID
     // (= iamzombieq:disguise_mask) can never drift apart.
-    public static final DeferredItem<Item> DISGUISE_MASK = ITEMS.registerSimpleItem(
+    public static final DeferredItem<Item> DISGUISE_MASK = registerSimpleItem(
             DisguiseRules.DISGUISE_MASK_PATH,
             properties -> properties
                     .durability(15)
@@ -94,6 +97,27 @@ public final class IAmZombieItems {
     private IAmZombieItems() {
     }
 
+    private static <I extends Item> DeferredItem<I> registerItem(
+            String name,
+            Function<Item.Properties, ? extends I> factory,
+            Supplier<Item.Properties> properties) {
+        //? if >=1.21.10 {
+        return ITEMS.registerItem(name, factory, properties);
+        //?} else {
+        /*return ITEMS.register(name,
+                key -> factory.apply(properties.get().setId(ResourceKey.create(Registries.ITEM, key))));
+        *///?}
+    }
+
+    private static DeferredItem<Item> registerSimpleItem(
+            String name, UnaryOperator<Item.Properties> properties) {
+        //? if >=1.21.10 {
+        return ITEMS.registerSimpleItem(name, properties);
+        //?} else {
+        /*return registerItem(name, Item::new, () -> properties.apply(new Item.Properties()));
+        *///?}
+    }
+
     public static void register(IEventBus modEventBus) {
         ITEMS.register(modEventBus);
         CREATIVE_TABS.register(modEventBus);
@@ -106,7 +130,11 @@ public final class IAmZombieItems {
             event.accept(COFFIN.get());
         } else if (tab == CreativeModeTabs.FOOD_AND_DRINKS) {
             event.accept(SUPER_ROTTEN_FLESH.get());
+        //? if >=1.21.11 {
         } else if (tab.identifier().equals(OP_BLOCKS_TAB) && event.hasPermissions()) {
+        //?} else {
+        /*} else if (tab.location().equals(OP_BLOCKS_TAB) && event.hasPermissions()) {
+        *///?}
             event.accept(new ItemStack(HEROBRINE_HEAD.get()), CreativeModeTab.TabVisibility.PARENT_AND_SEARCH_TABS);
         }
     }

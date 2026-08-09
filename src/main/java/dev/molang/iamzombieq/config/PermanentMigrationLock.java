@@ -152,6 +152,15 @@ final class PermanentMigrationLock {
                 MigrationFaultInjector.Timing.BEFORE);
         if (actual.length == 0
                 && request.allowEmptyFirstCreationRecovery()) {
+            if (request.emptyLockRecoveryPolicy()
+                    != MigrationIdentityPolicy.EmptyLockRecoveryPolicy
+                            .EXACT_FILE_KEY) {
+                throw new IllegalStateException(
+                        "A pre-existing zero-length permanent lock has only a "
+                                + "Windows BASIC fingerprint, not an exact inode "
+                                + "identity; preserve the lock unchanged and "
+                                + "follow C1-MANUAL-RECOVERY-v1");
+            }
             port.validatePayload(actual, actual);
             checkpoint(
                     MigrationFaultInjector.Operation.LOCK_PAYLOAD_VALIDATION,
@@ -289,7 +298,9 @@ final class PermanentMigrationLock {
             String expectedIdentity,
             MigrationAccessProfile profile,
             boolean strongRequired,
-            boolean allowEmptyFirstCreationRecovery) {
+            boolean allowEmptyFirstCreationRecovery,
+            MigrationIdentityPolicy.EmptyLockRecoveryPolicy
+                    emptyLockRecoveryPolicy) {
 
         Request {
             basename = MigrationDirectorySession.requireBasename(basename);
@@ -310,6 +321,16 @@ final class PermanentMigrationLock {
                         "Expected lock identity must be empty or non-blank");
             }
             Objects.requireNonNull(profile, "profile");
+            Objects.requireNonNull(
+                    emptyLockRecoveryPolicy, "emptyLockRecoveryPolicy");
+            if (profile == MigrationAccessProfile.BASIC
+                    && emptyLockRecoveryPolicy
+                            != MigrationIdentityPolicy.EmptyLockRecoveryPolicy
+                                    .MANUAL_ONLY) {
+                throw new IllegalArgumentException(
+                        "BASIC permanent locks cannot claim exact file-key "
+                                + "empty-lock recovery");
+            }
         }
 
         @Override
@@ -324,7 +345,8 @@ final class PermanentMigrationLock {
                     expectedIdentity,
                     profile,
                     value,
-                    allowEmptyFirstCreationRecovery);
+                    allowEmptyFirstCreationRecovery,
+                    emptyLockRecoveryPolicy);
         }
 
         Request withEmptyFirstCreationRecovery(boolean value) {
@@ -334,7 +356,8 @@ final class PermanentMigrationLock {
                     expectedIdentity,
                     profile,
                     strongRequired,
-                    value);
+                    value,
+                    emptyLockRecoveryPolicy);
         }
 
         boolean hasExpectedIdentity() {

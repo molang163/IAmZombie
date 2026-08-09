@@ -34,6 +34,14 @@ class MigrationPathStateTest {
                 MigrationPathState.UNSAFE,
                 MigrationPathState.classify(
                         () -> new MigrationPathState.Metadata(false, false, "directory-1", 0)));
+        assertEquals(
+                MigrationPathState.UNKNOWN,
+                MigrationPathState.classify(
+                        () -> new MigrationPathState.Metadata(true, false, "", 7)));
+        assertEquals(
+                MigrationPathState.UNKNOWN,
+                MigrationPathState.classify(
+                        () -> new MigrationPathState.Metadata(true, false, null, 7)));
     }
 
     @Test

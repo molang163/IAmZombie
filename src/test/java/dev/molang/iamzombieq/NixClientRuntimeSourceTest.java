@@ -12,9 +12,9 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * Guards {@code flake.nix} as the sole Nix native-runtime library manifest. The launcher remains a
- * parameter-transparent {@code nix develop} delegator, while Gradle retains only the NeoForge runtime task
- * that disables early window control.
+ * Guards {@code flake.nix} as the sole Nix native-runtime library manifest. The launcher selects the
+ * canonical Stonecutter node before transparently forwarding client arguments, while Gradle retains only the
+ * NeoForge runtime task that disables early window control.
  */
 class NixClientRuntimeSourceTest {
     private static final Path SCRIPT = Path.of("scripts/run-client-nixos.sh");
@@ -23,19 +23,20 @@ class NixClientRuntimeSourceTest {
     private static final Path FLAKE_LOCK = Path.of("flake.lock");
 
     @Test
-    void scriptIsAThinNixDevelopDelegator() throws IOException {
+    void scriptSelectsAndRunsOnlyTheCanonicalNode() throws IOException {
         String expected = """
                 #!/usr/bin/env bash
                 set -euo pipefail
 
                 cd "$(dirname "$0")/.."
 
-                exec nix develop --no-update-lock-file --command ./gradlew runClient "$@"
+                nix develop --no-update-lock-file --command ./gradlew 'Set active project to 26.2.x'
+                exec nix develop --no-update-lock-file --command ./gradlew :26.2.x:runClient "$@"
                 """;
 
         String actual = Files.readString(SCRIPT).replace("\r\n", "\n");
         assertEquals(expected, actual,
-                "the script should only cd to the repo root and transparently delegate to nix develop");
+                "the launcher must switch first, run only 26.2.x, and preserve client arguments");
     }
 
     @Test
@@ -106,13 +107,15 @@ class NixClientRuntimeSourceTest {
     @Test
     void gradleKeepsOnlyEarlyWindowRuntimePreparation() throws IOException {
         String build = Files.readString(BUILD_GRADLE);
-        assertTrue(build.contains("layout.projectDirectory.file('run/config/fml.toml')"),
-                "Gradle must continue to own the NeoForge fml.toml preparation");
+        assertTrue(build.contains("def runClientTask = tasks.named('runClient')"),
+                "Gradle must resolve the active node's runClient task");
+        assertTrue(build.contains("runTask.gameDirectory.file('config/fml.toml')"),
+                "Gradle must prepare fml.toml inside runClient's configured game directory");
         assertTrue(build.contains("tasks.register('configureDevClientRuntime')"),
                 "the configureDevClientRuntime task should still exist");
         assertTrue(build.contains("'earlyWindowControl = false'"),
                 "configureDevClientRuntime should still force earlyWindowControl = false");
-        assertTrue(build.contains("tasks.named('runClient').configure {"),
+        assertTrue(build.contains("runClientTask.configure {"),
                 "runClient's configuration block should still exist");
         assertTrue(build.contains("dependsOn(configureDevClientRuntime)"),
                 "runClient should still depend on configureDevClientRuntime");

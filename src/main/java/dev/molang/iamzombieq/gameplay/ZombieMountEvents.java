@@ -14,6 +14,7 @@ import dev.molang.iamzombieq.util.ZombiePlayerGates;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
@@ -25,7 +26,10 @@ import net.minecraft.world.entity.animal.equine.Horse;
 import net.minecraft.world.entity.animal.equine.SkeletonHorse;
 import net.minecraft.world.entity.animal.equine.ZombieHorse;
 import net.minecraft.world.entity.animal.golem.IronGolem;
+// CROSS_VERSION-NAUTILUS-CAPABILITY:mount-import
+//? if >=1.21.11 {
 import net.minecraft.world.entity.animal.nautilus.ZombieNautilus;
+//?}
 import net.minecraft.world.entity.monster.spider.Spider;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.monster.Strider;
@@ -68,7 +72,8 @@ public final class ZombieMountEvents {
             event.setCanceled(true);
             event.setCancellationResult(InteractionResult.SUCCESS_SERVER);
             if (!player.level().isClientSide()) {
-                player.sendSystemMessage(Component.translatable("iamzombieq.message.mount.horse_refused"));
+                sendPlayerSystemMessage(
+                        player, Component.translatable("iamzombieq.message.mount.horse_refused"));
             }
             return;
         }
@@ -87,7 +92,8 @@ public final class ZombieMountEvents {
                 } else if (!player.level().isClientSide()) {
                     // At full health the feed used to silently do nothing and not cancel. Acknowledge the
                     // interaction (don't waste the food) so it isn't silently dropped.
-                    player.sendSystemMessage(Component.translatable("iamzombieq.message.mount.horse_full_health"));
+                    sendPlayerSystemMessage(
+                            player, Component.translatable("iamzombieq.message.mount.horse_full_health"));
                 }
                 event.setCanceled(true);
                 event.setCancellationResult(InteractionResult.SUCCESS_SERVER);
@@ -229,6 +235,12 @@ public final class ZombieMountEvents {
         return ZombiePlayerGates.isZombiePlayer(player);
     }
 
+    private static void sendPlayerSystemMessage(Player player, Component message) {
+        if (player instanceof ServerPlayer serverPlayer) {
+            serverPlayer.sendSystemMessage(message);
+        }
+    }
+
     private static boolean isZombieHorseFood(ItemStack stack) {
         return stack.is(Items.ROTTEN_FLESH) || stack.is(IAmZombieItems.SUPER_ROTTEN_FLESH.get());
     }
@@ -282,7 +294,11 @@ public final class ZombieMountEvents {
                 mount.setTarget(null);
             }
             // Forced ride (rule already approved) so sneaking does not veto Entity.canRide; see handleSpiderInteract.
+            //? if >=1.21.10 {
             player.startRiding(mount, true, true);
+            //?} else {
+            /*player.startRiding(mount, true);
+            *///?}
             // Keep the mount from despawning while it serves as the player's ride (spiders and horses already
             // do this). The onMobDespawn MobDespawnEvent handler is the defensive backstop.
             mount.setPersistenceRequired();
@@ -311,7 +327,11 @@ public final class ZombieMountEvents {
                 // (isShiftKeyDown) -- and players commonly sneak when carefully approaching a hostile
                 // spider, which previously made a tamed spider impossible to ride. The forced overload
                 // still fires EntityMountEvent (-> onEntityMount), so the canMount rule remains the gate.
+                //? if >=1.21.10 {
                 player.startRiding(spider, true, true);
+                //?} else {
+                /*player.startRiding(spider, true);
+                *///?}
             }
             event.setCanceled(true);
             event.setCancellationResult(InteractionResult.SUCCESS_SERVER);
@@ -332,17 +352,20 @@ public final class ZombieMountEvents {
             if (ZombieMountRules.spiderIsTamed(nextProgress)) {
                 spider.setData(IAmZombieAttachments.SPIDER_MOUNT, SpiderMountData.ownedBy(player.getUUID()));
                 spider.setPersistenceRequired();
-                player.sendSystemMessage(Component.translatable("iamzombieq.message.mount.spider_tamed"));
+                sendPlayerSystemMessage(
+                        player, Component.translatable("iamzombieq.message.mount.spider_tamed"));
             } else {
                 spider.setData(IAmZombieAttachments.SPIDER_MOUNT, data.withProgress(nextProgress));
                 int percent = nextProgress * 100 / ZombieMountRules.SPIDER_TAME_PROGRESS_THRESHOLD;
-                player.sendSystemMessage(Component.translatable("iamzombieq.message.mount.spider_taming", percent));
+                sendPlayerSystemMessage(
+                        player, Component.translatable("iamzombieq.message.mount.spider_taming", percent));
             }
             return;
         }
 
         if (!data.isOwnedBy(player.getUUID())) {
-            player.sendSystemMessage(Component.translatable("iamzombieq.message.mount.spider_owned"));
+            sendPlayerSystemMessage(
+                    player, Component.translatable("iamzombieq.message.mount.spider_owned"));
             return;
         }
 
@@ -394,9 +417,12 @@ public final class ZombieMountEvents {
         if (mounted instanceof Chicken) {
             return MountKind.CHICKEN;
         }
+        // CROSS_VERSION-NAUTILUS-CAPABILITY:mount-classification
+        //? if >=1.21.11 {
         if (mounted instanceof ZombieNautilus) {
             return MountKind.ZOMBIE_NAUTILUS;
         }
+        //?}
         if (mounted instanceof Strider) {
             return MountKind.STRIDER;
         }

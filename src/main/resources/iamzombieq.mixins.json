@@ -2,9 +2,10 @@
   "required": true,
   "minVersion": "0.8",
   "package": "dev.molang.iamzombieq.mixin",
-  "compatibilityLevel": "JAVA_25",
+  "compatibilityLevel": "${mixin_java}",
   "mixins": [
     "DifficultyCommandMixin",
+    "EntitySpiderPassengerRestorationMixin",
     "HurtByTargetGoalAlertMixin",
     "ItemStackMixin",
     "LivingEntityMixin",
@@ -20,7 +21,7 @@
     "VillagerHostilesSensorMixin"
   ],
   "client": [
-    "client.AvatarRendererMixin",
+    "${player_renderer_mixin}",
     "client.ClientConfigurationPacketListenerMixin",
     "client.CreateWorldScreenGameTabMixin",
     "client.DifficultyButtonsMixin",

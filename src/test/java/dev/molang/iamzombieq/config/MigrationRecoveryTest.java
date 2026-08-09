@@ -913,6 +913,86 @@ class MigrationRecoveryTest {
     }
 
     @Test
+    void java22And25PreparedEvidenceCannotCrossRuntimeOrModifyArtifacts()
+            throws IOException {
+        for (int[] direction : new int[][] {{22, 25}, {25, 22}}) {
+            int evidenceFeature = direction[0];
+            int runtimeFeature = direction[1];
+            MigrationEngineTestStore store = preparedStore();
+            Path journalPath = paths().journal();
+            MigrationJournal journal =
+                    MigrationJournal.decode(store.files.get(journalPath));
+            MigrationEvidence evidence = journal.evidence();
+            MigrationBinding evidenceBinding = bindingWithJavaFeature(
+                    evidence.binding(), evidenceFeature);
+            MigrationEvidence reboundEvidence = new MigrationEvidence(
+                    evidence.targetKind(),
+                    evidence.target(),
+                    evidenceBinding,
+                    evidence.schemaVersion(),
+                    evidence.profile(),
+                    evidence.commitProfile(),
+                    evidence.lockIdentity(),
+                    evidence.phase(),
+                    evidence.projectionSha256(),
+                    evidence.rawLegacySha256(),
+                    evidence.artifactHashes(),
+                    evidence.artifactDurability());
+            store.put(
+                    journalPath,
+                    new MigrationJournal(
+                                    journal.generation(), reboundEvidence)
+                            .encode());
+
+            java.util.Map<Path, byte[]> artifactBytes =
+                    new java.util.LinkedHashMap<>();
+            store.files.forEach((path, bytes) ->
+                    artifactBytes.put(path, bytes.clone()));
+            java.util.Map<Path, String> artifactIdentities =
+                    new java.util.LinkedHashMap<>(store.identities);
+            int movesBefore = store.atomicMoves.size();
+            store.events.clear();
+
+            ConfigMigrationEngine.Request base =
+                    ConfigMigrationEngineTest.request(TARGET);
+            ConfigMigrationEngine.Request switched =
+                    new ConfigMigrationEngine.Request(
+                            base.targetKind(),
+                            base.legacy(),
+                            base.actualTarget(),
+                            bindingWithJavaFeature(
+                                    base.binding(), runtimeFeature),
+                            base.profile(),
+                            base.worldGuard(),
+                            base.strongDurability());
+            MigrationFailure failure = assertThrows(
+                    MigrationFailure.class,
+                    () -> engine().migrate(switched, store),
+                    evidenceFeature + "->" + runtimeFeature);
+
+            assertEquals(
+                    MigrationTargetState.Phase.PREPARED,
+                    failure.phase());
+            assertEquals(
+                    "evidence-binding-validation", failure.operation());
+            assertTrue(failure.reason().contains("does not bind"));
+            assertEquals(artifactBytes.keySet(), store.files.keySet());
+            for (var artifact : artifactBytes.entrySet()) {
+                assertArrayEquals(
+                        artifact.getValue(),
+                        store.files.get(artifact.getKey()),
+                        artifact.getKey().toString());
+            }
+            assertEquals(artifactIdentities, store.identities);
+            assertEquals(movesBefore, store.atomicMoves.size());
+            assertFalse(store.events.contains("read:LEGACY:" + LEGACY));
+            assertFalse(store.events.stream()
+                    .anyMatch(event -> event.startsWith("publish:")
+                            || event.startsWith("resume:")));
+        }
+    }
+
+    @Test
     void schemaMismatchedJournalEvidenceIsF1()
             throws IOException {
         MigrationEngineTestStore store = migratedStore();
@@ -1113,6 +1193,20 @@ class MigrationRecoveryTest {
         assertFalse(store.files.containsKey(TARGET));
         assertFalse(store.files.containsKey(paths().marker()));
         return store;
+    }
+
+    private static MigrationBinding bindingWithJavaFeature(
+            MigrationBinding binding, int javaFeature) {
+        return new MigrationBinding(
+                binding.target(),
+                binding.logicalParent(),
+                binding.physicalParent(),
+                binding.ancestors(),
+                binding.directoryIdentity(),
+                binding.providerIdentity(),
+                binding.fileStoreIdentity(),
+                javaFeature,
+                binding.operatingSystem());
     }
 
     private static ConfigMigrationEngine engine() {

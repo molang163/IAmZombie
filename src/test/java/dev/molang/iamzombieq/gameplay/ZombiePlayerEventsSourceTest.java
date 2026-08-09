@@ -5,9 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.molang.iamzombieq.util.SourceScan;
+import dev.molang.iamzombieq.util.StonecutterCapabilityMatrix;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class ZombiePlayerEventsSourceTest {
@@ -675,12 +678,110 @@ class ZombiePlayerEventsSourceTest {
     }
 
     @Test
+    void sunBurnEnvironmentGateUsesExactNodeBoundary() throws IOException {
+        String executingNode = StonecutterCapabilityMatrix.nodeId();
+        boolean environmentAttributeApi =
+                Set.of("26.2.x", "26.1.x", "1.21.11").contains(executingNode);
+        String rawSource = Files.readString(SOURCE);
+        String activeSource = SourceScan.stripComments(rawSource);
+        String importMarker = "CROSS_VERSION-SUN-BURN-ENVIRONMENT-GATE:import";
+        String valueMarker = "CROSS_VERSION-SUN-BURN-ENVIRONMENT-GATE:value";
+        String modernImport =
+                "import net.minecraft.world.attribute.EnvironmentAttributes;";
+        String modernValue =
+                "boolean monstersBurn = player.level().environmentAttributes()"
+                        + ".getValue(EnvironmentAttributes.MONSTERS_BURN, player.position());";
+        String legacyValue =
+                "boolean monstersBurn = player.level().isBrightOutside();";
+
+        assertEquals(1, SourceScan.countOccurrences(rawSource, importMarker),
+                "the EnvironmentAttributes import must have one local typed seam");
+        int importStart = rawSource.indexOf("// " + importMarker);
+        int importEnd = rawSource.indexOf(
+                "import net.minecraft.world.damagesource.DamageSource;",
+                importStart);
+        assertTrue(importStart >= 0 && importEnd > importStart,
+                "the EnvironmentAttributes seam must stay directly before the next world import");
+        String importBoundary = rawSource.substring(importStart, importEnd);
+        String expectedImportBoundary = environmentAttributeApi
+                ? "// " + importMarker + "\n//? if >=1.21.11 {\n"
+                        + modernImport + "\n//?}\n"
+                : "// " + importMarker + "\n//? if >=1.21.11 {\n/*"
+                        + modernImport + "\n*///?}\n";
+        assertEquals(expectedImportBoundary, importBoundary,
+                "the import seam must be contiguous and use the exact active-node form");
+
+        String rawMethod = SourceScan.methodBody(
+                rawSource, "private static boolean isSunBurnTick");
+        String activeMethod = SourceScan.stripComments(rawMethod);
+        String indent = "        ";
+        assertEquals(1, SourceScan.countOccurrences(rawMethod, valueMarker),
+                "the monster-burn value must have one local typed seam");
+        int valueStart = rawMethod.indexOf(indent + "// " + valueMarker);
+        int valueEnd = rawMethod.indexOf(indent + "float brightness", valueStart);
+        assertTrue(valueStart >= 0 && valueEnd > valueStart,
+                "the monster-burn seam must remain immediately before brightness sampling");
+        String valueBoundary = rawMethod.substring(valueStart, valueEnd);
+        String expectedValueBoundary = environmentAttributeApi
+                ? indent + "// " + valueMarker + "\n"
+                        + indent + "//? if >=1.21.11 {\n"
+                        + indent + modernValue + "\n"
+                        + indent + "//?} else {\n"
+                        + indent + "/*" + legacyValue + "\n"
+                        + indent + "*///?}\n"
+                : indent + "// " + valueMarker + "\n"
+                        + indent + "//? if >=1.21.11 {\n"
+                        + indent + "/*" + modernValue + "\n"
+                        + indent + "*///?} else {\n"
+                        + indent + legacyValue + "\n"
+                        + indent + "//?}\n";
+        assertEquals(expectedValueBoundary, valueBoundary,
+                "the value seam must be contiguous and use the node-native vanilla gate");
+
+        assertEquals(environmentAttributeApi ? 1 : 0,
+                SourceScan.countOccurrences(activeSource, modernImport));
+        assertEquals(environmentAttributeApi ? 1 : 0,
+                SourceScan.countOccurrences(activeMethod, modernValue));
+        assertEquals(environmentAttributeApi ? 0 : 1,
+                SourceScan.countOccurrences(activeMethod, legacyValue));
+        assertEquals(0, SourceScan.countOccurrences(rawMethod, "boolean monstersBurn = true;"),
+                "legacy nodes must retain their vanilla isBrightOutside gate, never an unconditional fallback");
+
+        Path mainJava = Path.of("src/main/java");
+        Set<Path> productionImportConsumers = new HashSet<>();
+        try (var paths = Files.walk(mainJava)) {
+            for (Path path : paths.filter(candidate -> candidate.toString().endsWith(".java")).toList()) {
+                if (Files.readString(path).contains(modernImport)) {
+                    productionImportConsumers.add(mainJava.relativize(path));
+                }
+            }
+        }
+        assertEquals(
+                Set.of(
+                        Path.of("dev/molang/iamzombieq/gameplay/ZombiePlayerEvents.java"),
+                        Path.of("dev/molang/iamzombieq/internal/mount/SpiderVehicleMovementContext.java")),
+                productionImportConsumers,
+                "EnvironmentAttributes consumers must remain the two reviewed local gameplay boundaries");
+        String controller = Files.readString(Path.of("stonecutter.gradle.kts"));
+        assertFalse(controller.contains(modernImport)
+                        || controller.contains("environmentAttributes().getValue(")
+                        || controller.contains("isBrightOutside()"),
+                "the environment gate must use a local typed seam, never a controller-wide replacement");
+    }
+
+    @Test
     void sunlightExposureMirrorsVanillaMobSunBurnTickInputs() throws IOException {
         String source = Files.readString(SOURCE);
+        String executingNode = StonecutterCapabilityMatrix.nodeId();
+        boolean environmentAttributeApi =
+                Set.of("26.2.x", "26.1.x", "1.21.11").contains(executingNode);
         String sunBurnTick = SourceScan.compact(SourceScan.stripComments(
                 SourceScan.methodBody(source, "private static boolean isSunBurnTick")));
         String expectedContextConstruction =
                 "newSunBurnContext(monstersBurn,brightness,randomValue,canSeeSky,inWaterRainOrPowderSnow)";
+        String expectedEnvironmentGate = environmentAttributeApi
+                ? "EnvironmentAttributes.MONSTERS_BURN"
+                : "player.level().isBrightOutside()";
 
         assertTrue(source.contains("player.isAlive()"), "sunlight logic should only run for living players like vanilla mobs");
         assertEquals(1, SourceScan.countOccurrences(sunBurnTick, expectedContextConstruction),
@@ -689,7 +790,7 @@ class ZombiePlayerEventsSourceTest {
                 "isSunBurnTick should not construct an additional or differently wired sunlight context");
         assertTrue(SourceScan.containsInOrder(
                         sunBurnTick,
-                        "EnvironmentAttributes.MONSTERS_BURN",
+                        expectedEnvironmentGate,
                         "player.getLightLevelDependentMagicValue()",
                         "if(!monstersBurn||brightness<=0.5F){returnfalse;}",
                         "player.getRandom().nextFloat()",

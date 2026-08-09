@@ -20,6 +20,7 @@ import net.minecraft.server.level.ClientInformation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.CommonListenerCookie;
+import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.minecraft.server.players.PlayerList;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Abilities;
@@ -72,6 +73,15 @@ final class GameTestPlayers {
         return player;
     }
 
+    static boolean hasClientLoaded(ServerGamePacketListenerImpl listener) {
+        // CROSS_VERSION-GAME-TEST-PLAYER-LOADED-API: the state moved from Player to the connection in 1.21.11.
+        //? if >=1.21.11 {
+        return listener.hasClientLoaded();
+        //?} else {
+        /*return listener.getPlayer().hasClientLoaded();
+        *///?}
+    }
+
     /**
      * Creates an ordinary connected {@link ServerPlayer} over a NeoForge-configured mock connection, completes its
      * load handshake, and puts it in SURVIVAL before applying the requested zombie state. The explicit NeoForge
@@ -100,12 +110,13 @@ final class GameTestPlayers {
             PlayerZombieData data = PlayerZombieData.DEFAULT.withState(new ZombieState(form, size));
             player.setData(IAmZombieAttachments.PLAYER_ZOMBIE, data);
 
-            helper.assertTrue(player.connection.hasClientLoaded(), "connected GameTest player did not finish PlayerLoaded");
-            helper.assertFalse(player.hasInfiniteMaterials(), "connected GameTest player retained instabuild");
-            helper.assertFalse(player.getAbilities().invulnerable, "connected GameTest player retained ability invulnerability");
-            helper.assertFalse(player.isInvulnerable(), "connected GameTest player retained entity invulnerability");
-            helper.assertFalse(player.getAbilities().flying, "connected GameTest player retained flying");
-            helper.assertFalse(mayFly(player.getAbilities()), "connected GameTest player retained mayfly");
+            GameTestAssertions.assertTrue(helper, GameTestPlayers.hasClientLoaded(player.connection),
+                    "connected GameTest player did not finish PlayerLoaded");
+            GameTestAssertions.assertFalse(helper, player.hasInfiniteMaterials(), "connected GameTest player retained instabuild");
+            GameTestAssertions.assertFalse(helper, player.getAbilities().invulnerable, "connected GameTest player retained ability invulnerability");
+            GameTestAssertions.assertFalse(helper, player.isInvulnerable(), "connected GameTest player retained entity invulnerability");
+            GameTestAssertions.assertFalse(helper, player.getAbilities().flying, "connected GameTest player retained flying");
+            GameTestAssertions.assertFalse(helper, mayFly(player.getAbilities()), "connected GameTest player retained mayfly");
             return player;
         } catch (RuntimeException | Error failure) {
             try {
@@ -133,9 +144,9 @@ final class GameTestPlayers {
                 disconnectCurrentPlayer(current);
             }
         } finally {
-            helper.assertFalse(playerList.getPlayersByUUID().containsKey(playerId),
-                    "connected GameTest player remained in the PlayerList UUID map after disconnect");
-            helper.assertTrue(level.players().stream().noneMatch(player -> playerId.equals(player.getUUID())),
+            GameTestAssertions.assertTrue(helper, playerList.getPlayer(playerId) == null,
+                    "connected GameTest player remained in the PlayerList UUID lookup after disconnect");
+            GameTestAssertions.assertTrue(helper, level.players().stream().noneMatch(player -> playerId.equals(player.getUUID())),
                     "connected GameTest player remained in ServerLevel.players after disconnect");
         }
     }

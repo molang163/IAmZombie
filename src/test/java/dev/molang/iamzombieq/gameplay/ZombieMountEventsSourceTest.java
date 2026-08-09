@@ -1,5 +1,6 @@
 package dev.molang.iamzombieq.gameplay;
 import dev.molang.iamzombieq.util.SourceScan;
+import dev.molang.iamzombieq.util.StonecutterCapabilityMatrix;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -17,6 +18,36 @@ class ZombieMountEventsSourceTest {
     private static final Path ATTACHMENTS = Path.of("src/main/java/dev/molang/iamzombieq/state/IAmZombieAttachments.java");
     private static final Path TARGET_RULES = Path.of("src/main/java/dev/molang/iamzombieq/rules/mount/BigZombieTargetRules.java");
     private static final Path MOUNT_KIND = Path.of("src/main/java/dev/molang/iamzombieq/rules/mount/MountKind.java");
+    private static final Path MOUNT_GAME_TEST_BODY = Path.of(
+            "src/main/java/dev/molang/iamzombieq/gametest/IAmZombieMountGameTestBodies.java");
+
+    @Test
+    void horseInfectionGameTestIdentifiesExactlyOneNewLocalEntityWithoutFixedDelay() throws IOException {
+        String source = Files.readString(MOUNT_GAME_TEST_BODY);
+        String method = SourceScan.methodBody(source, "static void zombieHorseInfectionOnDeath");
+        String compact = SourceScan.compact(SourceScan.stripComments(method));
+
+        assertTrue(compact.contains("newAABB(helper.absolutePos(rel)).inflate(1.5)"),
+                "the conversion query must stay inside the test's tight local bounds");
+        assertTrue(compact.contains("existingZombieHorseIds")
+                        && compact.contains("!existingZombieHorseIds.contains(candidate.getUUID())"),
+                "the fixture must identify this conversion by its before/after UUID difference");
+        assertTrue(compact.contains("newZombieHorses.size()!=1"),
+                "zero and multiple new candidates must both be rejected");
+        assertTrue(SourceScan.containsInOrder(
+                        compact,
+                        "newZombieHorses.size()!=1",
+                        "ZombieHorsezombieHorse=newZombieHorses.get"),
+                "candidate selection must occur only after exact uniqueness validation");
+        assertTrue(compact.contains("helper.succeedWhen("),
+                "the fixture must poll only for entity registration instead of assuming a fixed tick");
+        assertFalse(compact.contains("inflate(4.0)"),
+                "a wide sibling-test-overlapping query can select an unrelated zombie horse");
+        assertFalse(compact.contains("converted.get(0)"),
+                "the fixture must not blindly select the query's first entity");
+        assertFalse(compact.contains("thenExecuteAfter(2"),
+                "the fixture must not depend on a fixed two-tick delay");
+    }
 
     @Test
     void spiderMountAttachmentIsSyncedToTheClientSoRidingIsNotBlockedClientSide() throws IOException {
@@ -221,7 +252,7 @@ class ZombieMountEventsSourceTest {
                                 + "return;}"
                                 + "if(!player.level().isClientSide()){"
                                 + "if(clearTargetBeforeRiding){mount.setTarget(null);}"
-                                + "player.startRiding(mount,true,true);"
+                                + forcedRide("mount") + ";"
                                 + "mount.setPersistenceRequired();}"
                                 + "event.setCanceled(true);"
                                 + "event.setCancellationResult(InteractionResult.SUCCESS_SERVER);"),
@@ -242,7 +273,7 @@ class ZombieMountEventsSourceTest {
         // ride, so we force it (which still routes through EntityMountEvent -> onEntityMount).
         assertTrue(method.contains("ZombieMountRules.canMount(true, MountKind.SPIDER"),
                 "spider mount should still consult the canMount rule before riding");
-        assertTrue(method.contains("player.startRiding(spider, true, true)"),
+        assertTrue(method.contains(forcedRideSpaced("spider")),
                 "a rule-approved tamed-spider ride should be forced so sneaking cannot veto it");
     }
 
@@ -255,7 +286,7 @@ class ZombieMountEventsSourceTest {
         String shared = compactMethod(source, "private static void completeSimpleMountInteraction");
 
         // Our own deliberate mounts force the ride; normal horses are never force-ridden and are refused.
-        assertTrue(shared.contains("player.startRiding(mount,true,true)"),
+        assertTrue(shared.contains(forcedRide("mount")),
                 "rule-approved chicken and big-zombie mounts should still force the ride");
         assertTrue(source.contains("MountKind.NORMAL_HORSE, false"), "normal horses must still be refused by canMount");
         // The mount guard remains the single rule gate (fires even for forced rides).
@@ -304,7 +335,7 @@ class ZombieMountEventsSourceTest {
                 "chicken and big-zombie persistence should live in the shared approved-ride suffix");
         String shared = compactMethod(source, "private static void completeSimpleMountInteraction");
         assertTrue(shared.contains(
-                        "player.startRiding(mount,true,true);mount.setPersistenceRequired();"),
+                        forcedRide("mount") + ";mount.setPersistenceRequired();"),
                 "mounting a chicken or big zombie must mark it persistent immediately after the forced ride");
         assertTrue(compactMethod(source, "private static void handleChickenInteract").contains(
                         "completeSimpleMountInteraction(event,player,chicken,MountKind.CHICKEN,false);"),
@@ -440,11 +471,16 @@ class ZombieMountEventsSourceTest {
     @Test
     void nautilusCanConvertToZombieNautilusOnZombiePlayerKill() throws IOException {
         // The nautilus death-conversion path lives in ZombieInfectionEvents (the shared pipeline home).
-        String source = Files.readString(INFECTION_EVENTS);
+        String source = SourceScan.stripComments(Files.readString(INFECTION_EVENTS));
 
-        assertTrue(source.contains("Nautilus"), "vanilla nautilus should be recognized");
-        assertTrue(source.contains("ZombieNautilus"), "zombie nautilus conversion should be created");
-        assertTrue(source.contains("EntityTypes.ZOMBIE_NAUTILUS"), "conversion should use vanilla zombie nautilus entity type");
+        if (StonecutterCapabilityMatrix.hasNautilusEntityApi()) {
+            assertTrue(source.contains("Nautilus"), "vanilla nautilus should be recognized");
+            assertTrue(source.contains("ZombieNautilus"), "zombie nautilus conversion should be created");
+            assertTrue(source.contains("EntityTypes.ZOMBIE_NAUTILUS"),
+                    "conversion should use vanilla zombie nautilus entity type");
+        } else {
+            assertFalse(source.contains("Nautilus"));
+        }
     }
 
     @Test
@@ -487,12 +523,25 @@ class ZombieMountEventsSourceTest {
         assertTrue(SourceScan.containsInOrder(
                         tryInfectHorse,
                         "Float pendingHorseHealthRatio = PENDING_HORSE_HEALTH_RATIOS.remove(horse.getUUID())",
-                        "runInfectionPipeline(event, level, horse, player, EntityTypes.ZOMBIE_HORSE"),
+                        "runInfectionPipeline(event, level, horse, player, "
+                                + StonecutterCapabilityMatrix.activeEntityTypeHolder() + ".ZOMBIE_HORSE"),
                 "pending horse health ratios should be removed before the shared pipeline can reject infection");
         assertTrue(source.contains("ZombieInfectionRules.shouldInfect"), "the shared pipeline should still roll infection chance");
     }
 
     private static String compactMethod(String source, String signature) {
         return SourceScan.compact(SourceScan.stripComments(SourceScan.methodBody(source, signature)));
+    }
+
+    private static String forcedRide(String vehicle) {
+        return StonecutterCapabilityMatrix.nodeId().equals("1.21.8")
+                ? "player.startRiding(" + vehicle + ",true)"
+                : "player.startRiding(" + vehicle + ",true,true)";
+    }
+
+    private static String forcedRideSpaced(String vehicle) {
+        return StonecutterCapabilityMatrix.nodeId().equals("1.21.8")
+                ? "player.startRiding(" + vehicle + ", true)"
+                : "player.startRiding(" + vehicle + ", true, true)";
     }
 }

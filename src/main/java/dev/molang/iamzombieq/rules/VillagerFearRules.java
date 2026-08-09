@@ -2,7 +2,7 @@ package dev.molang.iamzombieq.rules;
 
 /**
  * An undisguised zombie player frightens villagers (panic/flee) and wandering traders (avoid). Pure,
- * registry-free decision logic so it is L0-unit-testable. "Zombie player" mirrors the codebase convention used by
+ * registry-free decision logic so it is unit-testable. "Zombie player" mirrors the codebase convention used by
  * {@code ZombieSleepEvents}/{@code CoffinBlock} (every non-spectator player is a zombie player); "disguised" means the
  * player wears the disguise mask on the head ({@code gameplay.ZombieMobTargetingAdapter.isDisguisedAsHuman}).
  */

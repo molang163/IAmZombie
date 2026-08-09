@@ -8,7 +8,10 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EntityReference;
+//? if >=26.2
 import net.minecraft.world.entity.EntityTypes;
+//? if <26.2
+//import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.animal.pig.Pig;
 import net.minecraft.world.entity.monster.zombie.ZombieVillager;
 import net.minecraft.world.entity.monster.zombie.ZombifiedPiglin;
@@ -39,11 +42,11 @@ final class IAmZombieGameTestBodies {
     static void smoke(GameTestHelper helper) {
         FakePlayer player = GameTestPlayers.spawnZombieFakePlayer(helper, ZombieForm.NORMAL, ZombieSize.ADULT);
         if (!player.isAlive()) {
-            helper.fail("FakePlayer should be alive after spawn");
+            GameTestAssertions.fail(helper, "FakePlayer should be alive after spawn");
             return;
         }
         if (GameTestPlayers.stateOf(player).form() != ZombieForm.NORMAL) {
-            helper.fail("FakePlayer zombie form should be NORMAL");
+            GameTestAssertions.fail(helper, "FakePlayer zombie form should be NORMAL");
             return;
         }
         helper.succeed();
@@ -61,7 +64,7 @@ final class IAmZombieGameTestBodies {
         GameTestSeams.feed(player, food);
 
         if (player.getEffect(MobEffects.HUNGER) == null) {
-            helper.fail("Zombie player should have the Hunger debuff after eating cooked_beef (HUMAN_COOKED)");
+            GameTestAssertions.fail(helper, "Zombie player should have the Hunger debuff after eating cooked_beef (HUMAN_COOKED)");
             return;
         }
         helper.succeed();
@@ -74,7 +77,7 @@ final class IAmZombieGameTestBodies {
     static void babyGrow(GameTestHelper helper) {
         FakePlayer player = GameTestPlayers.spawnZombieFakePlayer(helper, ZombieForm.NORMAL, ZombieSize.BABY);
         if (GameTestPlayers.stateOf(player).size() != ZombieSize.BABY) {
-            helper.fail("precondition: FakePlayer should start as a BABY");
+            GameTestAssertions.fail(helper, "precondition: FakePlayer should start as a BABY");
             return;
         }
 
@@ -82,7 +85,7 @@ final class IAmZombieGameTestBodies {
         GameTestSeams.feed(player, food);
 
         if (GameTestPlayers.stateOf(player).size() != ZombieSize.ADULT) {
-            helper.fail("Baby zombie should have grown to ADULT after eating super_rotten_flesh");
+            GameTestAssertions.fail(helper, "Baby zombie should have grown to ADULT after eating super_rotten_flesh");
             return;
         }
         helper.succeed();
@@ -127,7 +130,7 @@ final class IAmZombieGameTestBodies {
 
         helper.runAfterDelay(5L, () -> {
             if (hasZombifiedPiglinNear(helper)) {
-                helper.fail("a NORMAL-form zombie player must NOT convert a Pig into a ZombifiedPiglin (form-gated)");
+                GameTestAssertions.fail(helper, "a NORMAL-form zombie player must NOT convert a Pig into a ZombifiedPiglin (form-gated)");
                 return;
             }
             helper.succeed();
@@ -184,7 +187,7 @@ final class IAmZombieGameTestBodies {
         target.hurtServer(level, attack, 1.0F);
 
         if (target.getEffect(MobEffects.HUNGER) == null) {
-            helper.fail("A husk zombie's melee should inflict Hunger on its target");
+            GameTestAssertions.fail(helper, "A husk zombie's melee should inflict Hunger on its target");
             return;
         }
         helper.succeed();
@@ -214,11 +217,11 @@ final class IAmZombieGameTestBodies {
                     helper.getEntities(EntityTypes.ZOMBIE_VILLAGER, new BlockPos(1, 2, 1), 4.0)
                             .stream().findFirst().orElse(null);
             if (zombie == null) {
-                helper.fail("expected a ZombieVillager after the zombie player killed the villager");
+                GameTestAssertions.fail(helper, "expected a ZombieVillager after the zombie player killed the villager");
                 return;
             }
             if (zombie.getTarget() == player) {
-                helper.fail("a freshly-infected ZombieVillager must NOT target the kin zombie player that infected it");
+                GameTestAssertions.fail(helper, "a freshly-infected ZombieVillager must NOT target the kin zombie player that infected it");
                 return;
             }
             // (No positive-control re-strike here: the fix only deletes the spawn-time attacker seed and touches
@@ -266,11 +269,11 @@ final class IAmZombieGameTestBodies {
                     ZombieVillager kin = kinBox[0];
                     kin.setLastHurtByMob(player);
                     if (!GameTestSeams.targetDenied(kin, player)) {
-                        helper.fail("in-window: the conversion-grace branch must SUPPRESS (deny) the sweep-seeded target");
+                        GameTestAssertions.fail(helper, "in-window: the conversion-grace branch must SUPPRESS (deny) the sweep-seeded target");
                         return;
                     }
                     if (kin.getLastHurtByMob() != null) {
-                        helper.fail("in-window: the grace branch must CLEAR the sweep-seeded lastHurtByMob");
+                        GameTestAssertions.fail(helper, "in-window: the grace branch must CLEAR the sweep-seeded lastHurtByMob");
                     }
                 })
                 // POST-WINDOW (+28 -> ~T0+30, past the 10t window): no grudge was created, so re-posting
@@ -279,12 +282,12 @@ final class IAmZombieGameTestBodies {
                 .thenExecuteAfter(28, () -> {
                     ZombieVillager kin = kinBox[0];
                     if (!GameTestSeams.targetDenied(kin, player)) {
-                        helper.fail("post-window: a grace-suppressed conversion sweep must not create a player-grudge; the kin must stay DENIED");
+                        GameTestAssertions.fail(helper, "post-window: a grace-suppressed conversion sweep must not create a player-grudge; the kin must stay DENIED");
                         return;
                     }
                     kin.setLastHurtByMob(player);
                     if (GameTestSeams.targetDenied(kin, player)) {
-                        helper.fail("post-window: a deliberate strike must make the kin retaliate (target allowed, not denied)");
+                        GameTestAssertions.fail(helper, "post-window: a deliberate strike must make the kin retaliate (target allowed, not denied)");
                     }
                 })
                 .thenSucceed();
@@ -322,29 +325,34 @@ final class IAmZombieGameTestBodies {
                 .thenExecute(() -> {
                     ZombifiedPiglin kin = kinBox[0];
                     kin.setLastHurtByMob(player);
+                    // CROSS_VERSION-PERSISTENT-ANGER-TARGET-API
+                    //? if >=1.21.11 {
                     kin.setPersistentAngerTarget(EntityReference.of(player));
+                    //?} else {
+                    /*kin.setPersistentAngerTarget(player.getUUID());
+                    *///?}
                     kin.startPersistentAngerTimer();
                     if (!GameTestSeams.targetDenied(kin, player)) {
-                        helper.fail("in-window: the conversion-grace branch must SUPPRESS (deny) the sweep-seeded target");
+                        GameTestAssertions.fail(helper, "in-window: the conversion-grace branch must SUPPRESS (deny) the sweep-seeded target");
                         return;
                     }
                     if (kin.getLastHurtByMob() != null) {
-                        helper.fail("in-window: the grace branch must CLEAR the sweep-seeded lastHurtByMob");
+                        GameTestAssertions.fail(helper, "in-window: the grace branch must CLEAR the sweep-seeded lastHurtByMob");
                         return;
                     }
                     if (kin.isAngryAt(player, level)) {
-                        helper.fail("in-window: the grace branch must CLEAR the sweep-derived persistent anger");
+                        GameTestAssertions.fail(helper, "in-window: the grace branch must CLEAR the sweep-derived persistent anger");
                     }
                 })
                 .thenExecuteAfter(28, () -> {
                     ZombifiedPiglin kin = kinBox[0];
                     if (!GameTestSeams.targetDenied(kin, player)) {
-                        helper.fail("post-window: a grace-suppressed conversion sweep must not create a player-grudge; the zombified-piglin kin must stay DENIED");
+                        GameTestAssertions.fail(helper, "post-window: a grace-suppressed conversion sweep must not create a player-grudge; the zombified-piglin kin must stay DENIED");
                         return;
                     }
                     kin.setLastHurtByMob(player);
                     if (GameTestSeams.targetDenied(kin, player)) {
-                        helper.fail("post-window: a deliberate strike must make the zombified-piglin kin retaliate (allowed)");
+                        GameTestAssertions.fail(helper, "post-window: a deliberate strike must make the zombified-piglin kin retaliate (allowed)");
                     }
                 })
                 .thenSucceed();

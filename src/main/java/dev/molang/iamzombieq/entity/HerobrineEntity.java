@@ -19,7 +19,11 @@ import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
+//? if >=1.21.11 {
 import org.jspecify.annotations.Nullable;
+//?} else {
+/*import org.jetbrains.annotations.Nullable;
+*///?}
 
 public class HerobrineEntity extends Monster {
     private static final int MAX_LIFETIME_TICKS = 20 * 45;
@@ -123,7 +127,10 @@ public class HerobrineEntity extends Monster {
     }
 
     @Override
+    //? if >=26.1
     public InteractionResult interact(Player player, InteractionHand hand, Vec3 hitLocation) {
+    //? if <26.1
+    //public InteractionResult interactAt(Player player, Vec3 hitLocation, InteractionHand hand) {
         return InteractionResult.PASS;
     }
 

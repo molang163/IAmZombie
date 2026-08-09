@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -46,16 +47,74 @@ class PeacefulBlockSourceTest {
 
     @Test
     void worldOptionsDifficultyHandlerDirectlyDelegatesToGameplayGuard() throws IOException {
-        String source = SourceScan.mainJava(
+        String rawSource = SourceScan.mainJava(
                 "dev/molang/iamzombieq/mixin/client/DifficultyButtonsMixin.java");
-        assertTrue(source.contains("@Mixin(DifficultyButtons.class)"),
-                "the World Options redirect must keep its DifficultyButtons target");
-        assertTrue(source.contains("method = \"create\""),
-                "the World Options redirect must remain on DifficultyButtons.create");
+        String source = SourceScan.stripComments(rawSource);
+        String compactSource = SourceScan.compact(source);
+        String executingNode = System.getProperty("iamzombieq.test.nodeId");
+        assertTrue(Set.of("26.2.x", "26.1.x", "1.21.11", "1.21.10", "1.21.8").contains(executingNode),
+                "test must run under one of the five frozen Stonecutter nodes");
+        boolean modernDifficultyButtons = Set.of("26.2.x", "26.1.x").contains(executingNode);
+        String modernImport =
+                "import net.minecraft.client.gui.screens.options.DifficultyButtons;";
+        String legacyImport =
+                "import net.minecraft.client.gui.screens.options.OptionsScreen;";
+        String modernTarget = "@Mixin(DifficultyButtons.class)";
+        String legacyTarget = "@Mixin(OptionsScreen.class)";
+        String modernMethod = "method = \"create\"";
+        String legacyMethod = "method = \"createDifficultyButton\"";
+        String modernPrefix = modernDifficultyButtons ? "" : "//";
+        String legacyPrefix = modernDifficultyButtons ? "//" : "";
+
+        assertTrue(rawSource.contains(
+                        "//? if >=26.1\n" + modernPrefix + modernImport + "\n"
+                                + "//? if <26.1\n" + legacyPrefix + legacyImport),
+                "the World Options imports must retain an adjacent local 26.1 boundary");
+        assertTrue(rawSource.contains(
+                        "//? if >=26.1\n" + modernPrefix + modernTarget + "\n"
+                                + "//? if <26.1\n" + legacyPrefix + legacyTarget),
+                "the World Options mixin targets must retain an adjacent local 26.1 boundary");
+        assertTrue(rawSource.contains(
+                        "            //? if >=26.1\n            " + modernPrefix + modernMethod + ",\n"
+                                + "            //? if <26.1\n            " + legacyPrefix + legacyMethod + ","),
+                "the World Options redirect methods must retain an adjacent local 26.1 boundary");
+        for (String variant : new String[]{
+                modernImport, legacyImport, modernTarget, legacyTarget, modernMethod, legacyMethod
+        }) {
+            assertEquals(1, SourceScan.countOccurrences(rawSource, variant),
+                    "canonical source must retain exactly one copy of " + variant);
+        }
+        for (String modernVariant : new String[]{modernImport, modernTarget, modernMethod}) {
+            assertEquals(modernDifficultyButtons ? 1 : 0,
+                    SourceScan.countOccurrences(source, modernVariant));
+        }
+        for (String legacyVariant : new String[]{legacyImport, legacyTarget, legacyMethod}) {
+            assertEquals(modernDifficultyButtons ? 0 : 1,
+                    SourceScan.countOccurrences(source, legacyVariant));
+        }
+        assertFalse(source.contains("@Mixin(Screen.class)")
+                        || source.contains("@Pseudo")
+                        || compactSource.contains("require=0"),
+                "the legacy node must target its real OptionsScreen method without weakening mixin application");
+        assertEquals(1, SourceScan.countOccurrences(source, "@Mixin("),
+                "the active node must expose exactly one real mixin target");
+        assertEquals(1, SourceScan.countOccurrences(source, "@Redirect"),
+                "the active node must expose exactly one mandatory redirect");
+        assertEquals(1, SourceScan.countOccurrences(
+                        source,
+                        "Lnet/minecraft/world/Difficulty;values()[Lnet/minecraft/world/Difficulty;"),
+                "the active node must retain exactly one Difficulty.values() redirect");
         assertDifficultyRedirectDelegates(
                 source,
                 "private static Difficulty[] iamzombieq$onlyNonPeacefulDifficulties",
                 "DifficultyButtonsMixin");
+
+        String mixins = SourceScan.resource("iamzombieq.mixins.json");
+        assertEquals(1, SourceScan.countOccurrences(
+                        mixins, "\"client.DifficultyButtonsMixin\""),
+                "the active World Options mixin must remain registered exactly once");
+        assertTrue(mixins.contains("\"required\": true") && mixins.contains("\"defaultRequire\": 1"),
+                "the World Options redirect must remain covered by mandatory mixin application");
     }
 
     private static void assertDifficultyRedirectDelegates(String source, String handlerSignature, String label) {

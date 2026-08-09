@@ -1,13 +1,18 @@
 package dev.molang.iamzombieq.mixin;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.molang.iamzombieq.util.SourceScan;
+import dev.molang.iamzombieq.util.StonecutterCapabilityMatrix;
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.Modifier;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Set;
 import net.minecraft.network.Connection;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.monster.spider.Spider;
@@ -138,6 +143,134 @@ class ServerGamePacketListenerVehicleMixinSourceTest {
         assertTrue(source.contains("upperSum(\n                        drivenAcceleration,\n                        fluidCurrentAcceleration(inputs))"));
         assertFalse(source.contains("TOLERANCE"));
         assertFalse(source.contains("EPSILON"));
+    }
+
+    @Test
+    void contextUsesNodeNativeTypedPlatformMotionInputs() throws IOException {
+        String relative =
+                "dev/molang/iamzombieq/internal/mount/SpiderVehicleMovementContext.java";
+        String canonicalSource = SourceScan.mainJava(relative);
+        String node = StonecutterCapabilityMatrix.nodeId();
+        String generatedSource = Files.readString(Path.of(
+                "versions", node, "build/generated/stonecutter/main/java").resolve(relative));
+        String rawResolve = SourceScan.methodBody(
+                canonicalSource,
+                "static Optional<SpiderVehicleHorizontalEnvelope.MotionBound> resolve");
+        String rawScan = SourceScan.methodBody(
+                canonicalSource, "private static boolean scanBox");
+        String activeSource = SourceScan.compact(SourceScan.stripComments(generatedSource));
+        String activeResolve = SourceScan.compact(SourceScan.stripComments(SourceScan.methodBody(
+                generatedSource,
+                "static Optional<SpiderVehicleHorizontalEnvelope.MotionBound> resolve")));
+        String activeScan = SourceScan.compact(SourceScan.stripComments(SourceScan.methodBody(
+                generatedSource, "private static boolean scanBox")));
+        String formula = SourceScan.methodBody(
+                canonicalSource,
+                "static Optional<SpiderVehicleHorizontalEnvelope.MotionBound> fromInputs");
+        boolean modernMotionInputs = node.equals("26.2.x");
+        boolean dimensionEnvironmentFastLava = modernMotionInputs
+                || node.equals("26.1.x");
+        boolean positionalEnvironmentFastLava = node.equals("1.21.11");
+
+        String modernFriction = SourceScan.compact(
+                "float frictionModifier = (float) spider.getAttributeValue("
+                        + "Attributes.FRICTION_MODIFIER);");
+        String modernAirDrag = SourceScan.compact(
+                "float airDragModifier = (float) spider.getAttributeValue("
+                        + "Attributes.AIR_DRAG_MODIFIER);");
+        String modernEntityBounce = SourceScan.compact(
+                "double entityBounciness = spider.getAttributeValue(Attributes.BOUNCINESS);");
+        String legacyFriction = SourceScan.compact("float frictionModifier = 1.0F;");
+        String legacyAirDrag = SourceScan.compact("float airDragModifier = 1.0F;");
+        String legacyEntityBounce = SourceScan.compact("double entityBounciness = 0.0;");
+        String dimensionEnvironmentFastLavaInput = SourceScan.compact(
+                "level.environmentAttributes().getDimensionValue(EnvironmentAttributes.FAST_LAVA)");
+        String positionalEnvironmentFastLavaInput = SourceScan.compact(
+                "level.environmentAttributes().getValue("
+                        + "EnvironmentAttributes.WATER_EVAPORATES, spider.blockPosition())");
+        String legacyDimensionFastLavaInput = SourceScan.compact(
+                "level.dimensionType().ultraWarm()");
+        String modernBlockRestitution = SourceScan.compact(
+                "double blockBounciness = state.getBounceRestitution(level, pos, spider);");
+        String legacyBlockRestitution = SourceScan.compact(
+                "double blockBounciness = 0.0;");
+        String legacyFluidTypeGate = SourceScan.compact(
+                "if ((fluid.is(FluidTags.WATER)"
+                        + " && fluid.getFluidType() != NeoForgeMod.WATER_TYPE.value())"
+                        + " || (fluid.is(FluidTags.LAVA)"
+                        + " && fluid.getFluidType() != NeoForgeMod.LAVA_TYPE.value()))"
+                        + " { return false; }");
+
+        String activeEnvironmentImport =
+                "//? if >=1.21.11\nimport net.minecraft.world.attribute.EnvironmentAttributes;";
+        String inactiveEnvironmentImport =
+                "//? if >=1.21.11\n//import net.minecraft.world.attribute.EnvironmentAttributes;";
+        assertTrue(canonicalSource.contains(activeEnvironmentImport)
+                        || canonicalSource.contains(inactiveEnvironmentImport),
+                "the reversible source must retain the import boundary regardless of the active branch");
+        assertEquals(4, SourceScan.countOccurrences(rawResolve, "//? if >=26.2 {"));
+        assertEquals(1, SourceScan.countOccurrences(rawScan, "//? if >=26.2 {"));
+        assertEquals(1, SourceScan.countOccurrences(rawResolve, "//? if >=26.1 {"));
+        assertEquals(1, SourceScan.countOccurrences(
+                rawResolve, "//? if >=1.21.11 && <26.1 {"));
+        assertEquals(1, SourceScan.countOccurrences(rawResolve, "//? if <1.21.11 {"));
+        assertEquals(1, SourceScan.countOccurrences(rawScan, "//? if <26.1 {"));
+        assertEquals(4, SourceScan.countOccurrences(rawResolve, "//?} else {"));
+        assertEquals(1, SourceScan.countOccurrences(rawScan, "//?} else {"));
+        assertTrue(rawResolve.contains("float frictionModifier = 1.0F;"));
+        assertTrue(rawResolve.contains("float airDragModifier = 1.0F;"));
+        assertTrue(rawResolve.contains("double entityBounciness = 0.0;"));
+        assertEquals(1, SourceScan.countOccurrences(rawResolve, "true,"));
+        assertTrue(rawScan.contains("double blockBounciness = 0.0;"));
+        assertFalse(formula.contains("//?"),
+                "platform branches must stay out of the shared formula layer");
+        String compactFormula = SourceScan.compact(SourceScan.stripComments(formula));
+        assertTrue(compactFormula.contains(
+                "inputs.pre262NativeMotion||minFriction>0.6"));
+        assertTrue(compactFormula.contains(
+                "inputs.pre262NativeMotion?inputs.minFriction:computeModifiedFriction("));
+        assertTrue(compactFormula.contains(
+                "inputs.pre262NativeMotion?(float)VANILLA_GROUND_DRAG_FACTOR:computeModifiedFriction("));
+        assertFalse(rawResolve.contains("Class.forName")
+                        || rawResolve.contains("java.lang.reflect")
+                        || rawResolve.contains("@SuppressWarnings")
+                        || rawScan.contains("Class.forName")
+                        || rawScan.contains("java.lang.reflect")
+                        || rawScan.contains("@SuppressWarnings"),
+                "the platform input seam must remain typed and reflection-free");
+
+        assertEquals(modernMotionInputs ? 1 : 0,
+                SourceScan.countOccurrences(activeResolve, modernFriction));
+        assertEquals(modernMotionInputs ? 1 : 0,
+                SourceScan.countOccurrences(activeResolve, modernAirDrag));
+        assertEquals(modernMotionInputs ? 1 : 0,
+                SourceScan.countOccurrences(activeResolve, modernEntityBounce));
+        assertEquals(modernMotionInputs ? 0 : 1,
+                SourceScan.countOccurrences(activeResolve, legacyFriction));
+        assertEquals(modernMotionInputs ? 0 : 1,
+                SourceScan.countOccurrences(activeResolve, legacyAirDrag));
+        assertEquals(modernMotionInputs ? 0 : 1,
+                SourceScan.countOccurrences(activeResolve, legacyEntityBounce));
+        assertEquals(modernMotionInputs ? 1 : 0,
+                SourceScan.countOccurrences(activeResolve, "scan.hasLava,false,"));
+        assertEquals(modernMotionInputs ? 0 : 1,
+                SourceScan.countOccurrences(activeResolve, "scan.hasLava,true,"));
+        assertEquals(dimensionEnvironmentFastLava ? 1 : 0,
+                SourceScan.countOccurrences(activeResolve, dimensionEnvironmentFastLavaInput));
+        assertEquals(positionalEnvironmentFastLava ? 1 : 0,
+                SourceScan.countOccurrences(activeResolve, positionalEnvironmentFastLavaInput));
+        assertEquals(dimensionEnvironmentFastLava || positionalEnvironmentFastLava ? 0 : 1,
+                SourceScan.countOccurrences(activeResolve, legacyDimensionFastLavaInput));
+        assertEquals(modernMotionInputs ? 1 : 0,
+                SourceScan.countOccurrences(activeScan, modernBlockRestitution));
+        assertEquals(modernMotionInputs ? 0 : 1,
+                SourceScan.countOccurrences(activeScan, legacyBlockRestitution));
+        assertEquals(Set.of("1.21.11", "1.21.10", "1.21.8").contains(node) ? 1 : 0,
+                SourceScan.countOccurrences(activeScan, legacyFluidTypeGate));
+        assertEquals(dimensionEnvironmentFastLava || positionalEnvironmentFastLava ? 1 : 0,
+                SourceScan.countOccurrences(
+                        activeSource,
+                        "importnet.minecraft.world.attribute.EnvironmentAttributes;"));
     }
 
     @Test

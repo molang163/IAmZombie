@@ -21,6 +21,9 @@ class IAmZombieModTest {
 
         assertTrue(template.contains("[[mixins]]"));
         assertTrue(template.contains("config=\"${mod_id}.mixins.json\""));
+        assertTrue(template.contains("[features.${mod_id}]"));
+        assertTrue(template.contains(
+                "javaVersion=\"${java_version_range}\""));
         assertTrue(Files.isRegularFile(Path.of("src/main/resources/iamzombieq.mixins.json")));
     }
 }

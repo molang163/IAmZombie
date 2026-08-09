@@ -86,10 +86,13 @@ public final class GiantPlayerEvents {
             var ref = horse.getOwnerReference();
             return ref != null && owner.equals(ref.getUUID());
         }
+        // CROSS_VERSION-NAUTILUS-CAPABILITY:giant-owned-exemption
+        //? if >=1.21.11 {
         if (target instanceof net.minecraft.world.entity.animal.nautilus.ZombieNautilus nautilus) {
             var ref = nautilus.getOwnerReference();
             return ref != null && owner.equals(ref.getUUID());
         }
+        //?}
         return false;
     }
 

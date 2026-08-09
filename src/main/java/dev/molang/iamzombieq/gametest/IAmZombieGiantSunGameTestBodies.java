@@ -65,7 +65,7 @@ final class IAmZombieGiantSunGameTestBodies {
         postLeftClickStart(player, targetAbs);
 
         if (!helper.getBlockState(targetRel).isAir()) {
-            helper.fail("a GIANT-form player's swing should have destroyed the stone block within reach");
+            GameTestAssertions.fail(helper, "a GIANT-form player's swing should have destroyed the stone block within reach");
             return;
         }
         helper.succeed();
@@ -88,7 +88,7 @@ final class IAmZombieGiantSunGameTestBodies {
         postLeftClickStart(player, farAbs);
 
         if (!helper.getBlockState(farRel).is(Blocks.STONE)) {
-            helper.fail("a GIANT-form player's swing must NOT destroy a block beyond its block-interaction reach");
+            GameTestAssertions.fail(helper, "a GIANT-form player's swing must NOT destroy a block beyond its block-interaction reach");
             return;
         }
         helper.succeed();
@@ -108,7 +108,7 @@ final class IAmZombieGiantSunGameTestBodies {
         helper.setBlock(firstRel, Blocks.STONE);
         postLeftClickStart(player, helper.absolutePos(firstRel));
         if (!helper.getBlockState(firstRel).isAir()) {
-            helper.fail("precondition: the FIRST swing should have destroyed its stone block");
+            GameTestAssertions.fail(helper, "precondition: the FIRST swing should have destroyed its stone block");
             return;
         }
 
@@ -118,7 +118,7 @@ final class IAmZombieGiantSunGameTestBodies {
         helper.setBlock(secondRel, Blocks.STONE);
         postLeftClickStart(player, helper.absolutePos(secondRel));
         if (!helper.getBlockState(secondRel).is(Blocks.STONE)) {
-            helper.fail("a second giant swing within the cooldown window must be rejected (block preserved)");
+            GameTestAssertions.fail(helper, "a second giant swing within the cooldown window must be rejected (block preserved)");
             return;
         }
         helper.succeed();
@@ -147,17 +147,17 @@ final class IAmZombieGiantSunGameTestBodies {
 
         int expectedPiglinDamage = (int) (amount * ZombieBalanceRules.goldDurabilityConsumptionMultiplier(ZombieForm.ZOMBIFIED_PIGLIN));
         if (normalDamage != amount) {
-            helper.fail("baseline: a NORMAL-form player should lose the full " + amount
+            GameTestAssertions.fail(helper, "baseline: a NORMAL-form player should lose the full " + amount
                     + " gold durability, but lost " + normalDamage);
             return;
         }
         if (piglinDamage != expectedPiglinDamage) {
-            helper.fail("a ZOMBIFIED_PIGLIN-form player should lose only " + expectedPiglinDamage
+            GameTestAssertions.fail(helper, "a ZOMBIFIED_PIGLIN-form player should lose only " + expectedPiglinDamage
                     + " gold durability (x0.25), but lost " + piglinDamage);
             return;
         }
         if (piglinDamage >= normalDamage) {
-            helper.fail("the piglin's gold durability loss (" + piglinDamage
+            GameTestAssertions.fail(helper, "the piglin's gold durability loss (" + piglinDamage
                     + ") must be strictly less than the baseline (" + normalDamage + ")");
             return;
         }
@@ -177,10 +177,13 @@ final class IAmZombieGiantSunGameTestBodies {
 
         player.setHealth(10.0F);
         float before = player.getHealth();
+        //? if >=26.2
         MobEffects.INSTANT_DAMAGE.value().applyInstantaneousEffect(level, null, null, player, 0, 1.0);
+        //? if <26.2
+        //MobEffects.INSTANT_DAMAGE.value().applyInstantenousEffect(level, null, null, player, 0, 1.0);
 
         if (player.getHealth() <= before) {
-            helper.fail("a zombie player should be HEALED by instant-damage (undead heal/harm inversion); health went from "
+            GameTestAssertions.fail(helper, "a zombie player should be HEALED by instant-damage (undead heal/harm inversion); health went from "
                     + before + " to " + player.getHealth());
             return;
         }

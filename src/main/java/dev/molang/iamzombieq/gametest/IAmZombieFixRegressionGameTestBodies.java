@@ -10,11 +10,17 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.effect.MobEffects;
+//? if >=26.2
 import net.minecraft.world.entity.EntityTypes;
+//? if <26.2
+//import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.animal.equine.ZombieHorse;
+// CROSS_VERSION-NAUTILUS-CAPABILITY:gametest-body-imports
+//? if >=1.21.11 {
 import net.minecraft.world.entity.animal.nautilus.Nautilus;
 import net.minecraft.world.entity.animal.nautilus.ZombieNautilus;
+//?}
 import net.minecraft.world.entity.animal.pig.Pig;
 import net.minecraft.world.entity.monster.zombie.ZombifiedPiglin;
 import net.minecraft.world.item.ItemStack;
@@ -42,6 +48,8 @@ final class IAmZombieFixRegressionGameTestBodies {
     }
 
     /** #2: an unsaddled nautilus converts to a zombie-nautilus with NO saddle (the fix copies the source's empty slot). */
+    // CROSS_VERSION-NAUTILUS-CAPABILITY:gametest-saddle-body
+    //? if >=1.21.11 {
     static void nautilusSaddleNotFabricated(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         FakePlayer player = GameTestPlayers.spawnZombieFakePlayer(helper, ZombieForm.NORMAL, ZombieSize.ADULT);
@@ -65,18 +73,19 @@ final class IAmZombieFixRegressionGameTestBodies {
                 .thenExecute(() -> {
                     ZombieNautilus converted = convertedBox[0];
                     if (converted == null) {
-                        helper.fail("nautilus was not converted (HARD infection should be deterministic)");
+                        GameTestAssertions.fail(helper, "nautilus was not converted (HARD infection should be deterministic)");
                         return;
                     }
                     ItemStack saddle = converted.getItemBySlot(EquipmentSlot.SADDLE);
                     if (!saddle.isEmpty()) {
-                        helper.fail("#2 regression: an unsaddled nautilus's conversion fabricated a saddle (" + saddle + ")");
+                        GameTestAssertions.fail(helper, "#2 regression: an unsaddled nautilus's conversion fabricated a saddle (" + saddle + ")");
                     }
                 })
                 .thenSucceed();
     }
+    //?}
 
-    /** #3/#4: a pig infected by a ZOMBIFIED_PIGLIN-form player converts to an ADULT piglin holding a golden sword. */
+    /** #3/#4: a pig infected by a ZOMBIFIED_PIGLIN-form player converts to an ADULT piglin with native equipment. */
     static void piglinConversionNotBabyAndArmed(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         FakePlayer player = GameTestPlayers.spawnZombieFakePlayer(helper, ZombieForm.ZOMBIFIED_PIGLIN, ZombieSize.ADULT);
@@ -100,19 +109,21 @@ final class IAmZombieFixRegressionGameTestBodies {
                 .thenExecute(() -> {
                     ZombifiedPiglin piglin = convertedBox[0];
                     if (piglin == null) {
-                        helper.fail("pig was not converted to a zombified piglin (HARD infection should be deterministic)");
+                        GameTestAssertions.fail(helper, "pig was not converted to a zombified piglin (HARD infection should be deterministic)");
                         return;
                     }
                     if (piglin.isBaby()) {
-                        helper.fail("#3 regression: an adult pig converted into a BABY zombified piglin (spurious finalizeSpawn baby roll)");
+                        GameTestAssertions.fail(helper, "#3 regression: an adult pig converted into a BABY zombified piglin (spurious finalizeSpawn baby roll)");
                         return;
                     }
-                    // ZombifiedPiglin.populateDefaultEquipmentSlots picks from {GOLDEN_SWORD 95%, GOLDEN_SPEAR 5%}
-                    // (random.nextInt(20)==0 ? spear : sword). The old sword-only assertion was flaky (~5% of runs the
-                    // spawn rolls a spear); accepting either golden weapon covers the whole pool -> deterministically green.
+                    // Vanilla always equips GOLDEN_SWORD here; >=1.21.11 can instead roll GOLDEN_SPEAR 5% of the time.
                     ItemStack mainhand = piglin.getItemBySlot(EquipmentSlot.MAINHAND);
-                    if (!(mainhand.is(Items.GOLDEN_SWORD) || mainhand.is(Items.GOLDEN_SPEAR))) {
-                        helper.fail("converted zombified piglin should hold a golden weapon (sword or spear) (equipment must survive the fix), had "
+                    boolean hasNodeNativeGoldenWeapon = mainhand.is(Items.GOLDEN_SWORD);
+                    // CROSS_VERSION-GOLDEN-SPEAR-EQUIPMENT-POOL:high-node-vanilla-roll
+                    //? if >=1.21.11
+                    hasNodeNativeGoldenWeapon = hasNodeNativeGoldenWeapon || mainhand.is(Items.GOLDEN_SPEAR);
+                    if (!hasNodeNativeGoldenWeapon) {
+                        GameTestAssertions.fail(helper, "converted zombified piglin should hold its node-native default golden weapon (equipment must survive the fix), had "
                                 + mainhand);
                     }
                 })
@@ -130,7 +141,7 @@ final class IAmZombieFixRegressionGameTestBodies {
         postRightClick(player, cakeAbs);
 
         if (player.hasEffect(MobEffects.HUNGER)) {
-            helper.fail("#11 regression: placing a candle on a cake (no slice eaten) still applied the human-food punishment");
+            GameTestAssertions.fail(helper, "#11 regression: placing a candle on a cake (no slice eaten) still applied the human-food punishment");
             return;
         }
         helper.succeed();
@@ -147,7 +158,7 @@ final class IAmZombieFixRegressionGameTestBodies {
         postRightClick(player, cakeAbs);
 
         if (!player.hasEffect(MobEffects.HUNGER)) {
-            helper.fail("a normal empty-hand cake bite should still apply the human-food punishment (fix must not over-skip)");
+            GameTestAssertions.fail(helper, "a normal empty-hand cake bite should still apply the human-food punishment (fix must not over-skip)");
             return;
         }
         helper.succeed();
@@ -163,7 +174,7 @@ final class IAmZombieFixRegressionGameTestBodies {
         player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.CANDLE));
         postRightClickAt(player, cakeAbs, cakeAbs.getY() + 0.5);
         if (!player.hasEffect(MobEffects.HUNGER)) {
-            helper.fail("holding a candle over a BITTEN cake still eats a slice (no placement) and must still be punished");
+            GameTestAssertions.fail(helper, "holding a candle over a BITTEN cake still eats a slice (no placement) and must still be punished");
             return;
         }
         helper.succeed();
@@ -179,7 +190,7 @@ final class IAmZombieFixRegressionGameTestBodies {
         player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
         postRightClickAt(player, cakeAbs, cakeAbs.getY() + 0.2); // lower half = cake part = eats
         if (!player.hasEffect(MobEffects.HUNGER)) {
-            helper.fail("an empty-hand hit on the CAKE part of a LIT candle-cake eats a slice and must still be punished");
+            GameTestAssertions.fail(helper, "an empty-hand hit on the CAKE part of a LIT candle-cake eats a slice and must still be punished");
             return;
         }
         helper.succeed();
@@ -195,7 +206,7 @@ final class IAmZombieFixRegressionGameTestBodies {
         player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
         postRightClickAt(player, cakeAbs, cakeAbs.getY() + 0.9); // upper half = candle part = extinguish, no eat
         if (player.hasEffect(MobEffects.HUNGER)) {
-            helper.fail("extinguishing a LIT candle-cake (empty hand, candle-part hit) does not eat and must NOT be punished");
+            GameTestAssertions.fail(helper, "extinguishing a LIT candle-cake (empty hand, candle-part hit) does not eat and must NOT be punished");
             return;
         }
         helper.succeed();
@@ -226,17 +237,19 @@ final class IAmZombieFixRegressionGameTestBodies {
         NeoForge.EVENT_BUS.post(new PlayerTickEvent.Post(giant)); // fresh giant tickCount==0 -> the %20 aura gate fires
 
         if (wild.getHealth() >= wildBefore) {
-            helper.fail("control: the giant stomp aura should damage a WILD mount in radius (aura did not fire)");
+            GameTestAssertions.fail(helper, "control: the giant stomp aura should damage a WILD mount in radius (aura did not fire)");
             return;
         }
         if (owned.getHealth() < ownedBefore) {
-            helper.fail("#10 regression: the giant stomp aura damaged the player's OWN owned zombie-horse");
+            GameTestAssertions.fail(helper, "#10 regression: the giant stomp aura damaged the player's OWN owned zombie-horse");
             return;
         }
         helper.succeed();
     }
 
     /** #10 (nautilus arm): an OWNED zombie-nautilus survives the aura while a WILD zombie-horse control is stomped. */
+    // CROSS_VERSION-NAUTILUS-CAPABILITY:gametest-stomp-body
+    //? if >=1.21.11 {
     static void giantAuraSparesOwnedNautilusStompsWild(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         FakePlayer giant = GameTestPlayers.spawnZombieFakePlayer(helper, ZombieForm.GIANT, ZombieSize.ADULT);
@@ -251,15 +264,16 @@ final class IAmZombieFixRegressionGameTestBodies {
         NeoForge.EVENT_BUS.post(new PlayerTickEvent.Post(giant));
 
         if (wild.getHealth() >= wildBefore) {
-            helper.fail("control: the giant stomp aura should damage a WILD mount in radius (aura did not fire)");
+            GameTestAssertions.fail(helper, "control: the giant stomp aura should damage a WILD mount in radius (aura did not fire)");
             return;
         }
         if (owned.getHealth() < ownedBefore) {
-            helper.fail("#10 regression: the giant stomp aura damaged the player's OWN owned zombie-nautilus");
+            GameTestAssertions.fail(helper, "#10 regression: the giant stomp aura damaged the player's OWN owned zombie-nautilus");
             return;
         }
         helper.succeed();
     }
+    //?}
 
     /**
      * #1: the passive walk-destruction sweep clamps its last->now delta to the per-tick reach, so a STALE
@@ -288,11 +302,11 @@ final class IAmZombieFixRegressionGameTestBodies {
         NeoForge.EVENT_BUS.post(new PlayerTickEvent.Post(giant));
 
         if (!level.getBlockState(nearBlock).isAir()) {
-            helper.fail("control: the giant passive sweep should crush a soft block within reach of its new position (sweep did not fire)");
+            GameTestAssertions.fail(helper, "control: the giant passive sweep should crush a soft block within reach of its new position (sweep did not fire)");
             return;
         }
         if (level.getBlockState(farBlock).isAir()) {
-            helper.fail("#1 regression: the sweep razed a block ~15 blocks back at the STALE position -> delta clamp not applied (unbounded sweep)");
+            GameTestAssertions.fail(helper, "#1 regression: the sweep razed a block ~15 blocks back at the STALE position -> delta clamp not applied (unbounded sweep)");
             return;
         }
         helper.succeed();

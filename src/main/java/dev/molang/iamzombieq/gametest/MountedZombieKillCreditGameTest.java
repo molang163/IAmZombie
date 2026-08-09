@@ -28,7 +28,10 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.entity.Entity;
+//? if >=26.2
 import net.minecraft.world.entity.EntityTypes;
+//? if <26.2
+//import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.monster.zombie.Zombie;
@@ -44,7 +47,10 @@ import net.minecraft.world.scores.Team;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.common.util.FakePlayer;
+//? if >=26.1
 import net.neoforged.neoforge.event.enchanting.EnchantedEntityLootEvent;
+//? if <26.1
+//import net.neoforged.neoforge.event.enchanting.GetEnchantmentLevelEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDropsEvent;
 import net.neoforged.neoforge.event.entity.living.LivingExperienceDropEvent;
@@ -86,7 +92,7 @@ final class MountedZombieKillCreditGameTest {
         }
 
         if (!failures.isEmpty()) {
-            helper.fail("LOOT1-FIX1: " + String.join(" | ", failures));
+            GameTestAssertions.fail(helper, "LOOT1-FIX1: " + String.join(" | ", failures));
             return;
         }
         helper.succeed();
@@ -109,7 +115,10 @@ final class MountedZombieKillCreditGameTest {
 
         int mobKillsBefore = rider.statCount(MOB_KILLS);
         int zombieKillsBefore = rider.statCount(ZOMBIE_KILLS);
+        //? if >=26.1
         observer.begin(victim);
+        //? if <26.1
+        //observer.begin(victim, rider.getMainHandItem());
         try {
             mount.setTarget(victim);
             mount.tickCount = 20;
@@ -299,7 +308,7 @@ final class MountedZombieKillCreditGameTest {
         boolean originalPvp = level.getGameRules().get(GameRules.PVP);
         Zombie mount = null;
         try {
-            level.getGameRules().set(GameRules.PVP, true, level.getServer());
+            setPvp(level, true);
             setState(rider, ZombieForm.NORMAL, ZombieSize.BABY);
             rider.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
             mount = activeBigZombieMount(level, base, rider);
@@ -323,7 +332,7 @@ final class MountedZombieKillCreditGameTest {
                 discardMount(rider, mount);
             }
             level.getServer().setDifficulty(originalDifficulty, true);
-            level.getGameRules().set(GameRules.PVP, originalPvp, level.getServer());
+            setPvp(level, originalPvp);
         }
     }
 
@@ -337,14 +346,14 @@ final class MountedZombieKillCreditGameTest {
             rider.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
             mount = activeBigZombieMount(level, base, rider);
 
-            level.getGameRules().set(GameRules.PVP, false, level.getServer());
+            setPvp(level, false);
             RecordingFakePlayer pvpTarget = player(level, base.add(0.75, 0.0, 0.0), ZombieForm.NORMAL, ZombieSize.ADULT);
             float pvpHealth = pvpTarget.getHealth();
             boolean pvpHit = mount.doHurtTarget(level, pvpTarget);
             check(failures, !pvpHit && Math.abs(pvpTarget.getHealth() - pvpHealth) < EPSILON,
                     "player-caused mount damage must obey the disabled PvP gamerule");
 
-            level.getGameRules().set(GameRules.PVP, true, level.getServer());
+            setPvp(level, true);
             RecordingFakePlayer teamTarget = player(level, base.add(0.75, 0.0, 0.0), ZombieForm.NORMAL, ZombieSize.ADULT);
             team = level.getScoreboard().addPlayerTeam("loot1" + UUID.randomUUID().toString().substring(0, 8));
             team.setAllowFriendlyFire(false);
@@ -361,8 +370,20 @@ final class MountedZombieKillCreditGameTest {
             if (mount != null) {
                 discardMount(rider, mount);
             }
-            level.getGameRules().set(GameRules.PVP, originalPvp, level.getServer());
+            setPvp(level, originalPvp);
         }
+    }
+
+    private static void setPvp(ServerLevel level, boolean enabled) {
+        //? if >=1.21.11 {
+        level.getGameRules().set(GameRules.PVP, enabled, level.getServer());
+        //?}
+        //? if >=1.21.10 && <1.21.11 {
+        /*level.getServer().getGameRules().getRule(GameRules.RULE_PVP).set(enabled, level.getServer());
+        *///?}
+        //? if <1.21.10 {
+        /*level.getServer().setPvpAllowed(enabled);
+        *///?}
     }
 
     private static Zombie activeBigZombieMount(ServerLevel level, Vec3 position, RecordingFakePlayer rider) {
@@ -499,6 +520,13 @@ final class MountedZombieKillCreditGameTest {
             this.active = new KillObservation();
         }
 
+        //? if <26.1 {
+        /*void begin(Entity victim, ItemStack lootingStack) {
+            begin(victim);
+            active.lootingStack = lootingStack;
+        }
+        *///?}
+
         KillObservation finish() {
             if (active == null) {
                 throw new IllegalStateException("attribution observer was not active");
@@ -546,6 +574,7 @@ final class MountedZombieKillCreditGameTest {
             }
         }
 
+        //? if >=26.1 {
         @SubscribeEvent
         public void onEnchantedLoot(EnchantedEntityLootEvent event) {
             if (matches(event.getEntity()) && event.getEnchantment().is(Enchantments.LOOTING)) {
@@ -554,6 +583,21 @@ final class MountedZombieKillCreditGameTest {
                 active.maxLootingLevel = Math.max(active.maxLootingLevel, event.getEnchantmentLevel());
             }
         }
+        //?} else {
+        /*@SubscribeEvent
+        public void onLegacyEnchantmentLevel(GetEnchantmentLevelEvent event) {
+            var target = event.getTargetEnchant();
+            if (active != null
+                    && event.getStack() == active.lootingStack
+                    && target != null
+                    && target.is(Enchantments.LOOTING)) {
+                int level = event.getEnchantments().getLevel(target);
+                active.lootingQueries++;
+                active.minLootingLevel = Math.min(active.minLootingLevel, level);
+                active.maxLootingLevel = Math.max(active.maxLootingLevel, level);
+            }
+        }
+        *///?}
 
         private boolean matches(Entity entity) {
             return active != null && victimId != null && victimId.equals(entity.getUUID());
@@ -573,5 +617,7 @@ final class MountedZombieKillCreditGameTest {
         int lootingQueries;
         int minLootingLevel = Integer.MAX_VALUE;
         int maxLootingLevel = Integer.MIN_VALUE;
+        //? if <26.1
+        //ItemStack lootingStack;
     }
 }

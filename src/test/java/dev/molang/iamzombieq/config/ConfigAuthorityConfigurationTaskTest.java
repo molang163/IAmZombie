@@ -75,4 +75,23 @@ class ConfigAuthorityConfigurationTaskTest {
                 ConfigAuthorityConfigurationTask.ACK_DEADLINE_MILLIS,
                 "the authority deadline must reuse vanilla's latency interval");
     }
+
+    @Test
+    void aBackwardsDeadlineClockFailsClosed() {
+        ConfigAuthoritySnapshot snapshot = ConfigAuthorityProtocol.snapshot(
+                84L, ConfigAuthorityRemoteValuesTest.defaultValues());
+        AtomicLong now = new AtomicLong(10_000L);
+        ConfigAuthorityConfigurationTask task =
+                new ConfigAuthorityConfigurationTask(snapshot, now::get);
+
+        task.run(ignored -> {});
+        now.set(9_999L);
+
+        ConfigAuthorityProtocolException failure = assertThrows(
+                ConfigAuthorityProtocolException.class,
+                task::tick);
+        assertEquals(
+                "Configuration authority acknowledgement clock moved backwards",
+                failure.getMessage());
+    }
 }

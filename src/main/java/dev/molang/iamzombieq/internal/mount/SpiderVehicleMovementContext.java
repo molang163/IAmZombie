@@ -6,6 +6,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.util.Mth;
 import net.minecraft.world.effect.MobEffects;
+//? if >=1.21.11
 import net.minecraft.world.attribute.EnvironmentAttributes;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.monster.spider.Spider;
@@ -86,16 +87,28 @@ final class SpiderVehicleMovementContext {
                 (float)
                         spider.getAttributeValue(
                                 Attributes.MOVEMENT_EFFICIENCY);
+        //? if >=26.2 {
         float frictionModifier =
                 (float)
                         spider.getAttributeValue(
                                 Attributes.FRICTION_MODIFIER);
+        //?} else {
+        /*float frictionModifier = 1.0F;
+        *///?}
+        //? if >=26.2 {
         float airDragModifier =
                 (float)
                         spider.getAttributeValue(
                                 Attributes.AIR_DRAG_MODIFIER);
+        //?} else {
+        /*float airDragModifier = 1.0F;
+        *///?}
+        //? if >=26.2 {
         double entityBounciness =
                 spider.getAttributeValue(Attributes.BOUNCINESS);
+        //?} else {
+        /*double entityBounciness = 0.0;
+        *///?}
         float swimSpeed =
                 (float) spider.getAttributeValue(NeoForgeMod.SWIM_SPEED);
         return fromInputs(
@@ -116,9 +129,25 @@ final class SpiderVehicleMovementContext {
                         spider.isPushedByFluid(),
                         scan.hasWater,
                         scan.hasLava,
+                        //? if >=26.2 {
+                        false,
+                        //?} else {
+                        /*true,
+                        *///?}
+                        //? if >=26.1 {
                         level.environmentAttributes()
                                 .getDimensionValue(
                                         EnvironmentAttributes.FAST_LAVA)));
+                        //?}
+                        //? if >=1.21.11 && <26.1 {
+                        /*level.environmentAttributes()
+                                .getValue(
+                                        EnvironmentAttributes.WATER_EVAPORATES,
+                                        spider.blockPosition())));
+                        *///?}
+                        //? if <1.21.11 {
+                        /*level.dimensionType().ultraWarm()));
+                        *///?}
     }
 
     static Optional<SpiderVehicleHorizontalEnvelope.MotionBound> fromInputs(
@@ -142,16 +171,22 @@ final class SpiderVehicleMovementContext {
         }
 
         float minFriction =
-                computeModifiedFriction(
-                        inputs.minFriction, inputs.frictionModifier);
+                inputs.pre262NativeMotion
+                        ? inputs.minFriction
+                        : computeModifiedFriction(
+                                inputs.minFriction,
+                                inputs.frictionModifier);
         float maxFriction =
-                computeModifiedFriction(
-                        inputs.maxFriction, inputs.frictionModifier);
+                inputs.pre262NativeMotion
+                        ? inputs.maxFriction
+                        : computeModifiedFriction(
+                                inputs.maxFriction,
+                                inputs.frictionModifier);
         if (minFriction == 0.0) {
             return Optional.empty();
         }
         float groundAcceleration =
-                minFriction > 0.6
+                inputs.pre262NativeMotion || minFriction > 0.6
                         ? inputs.configuredSpeed
                                 * ((float)
                                                 VANILLA_GROUND_ACCELERATION_NUMERATOR
@@ -186,9 +221,11 @@ final class SpiderVehicleMovementContext {
         }
 
         float airDrag =
-                computeModifiedFriction(
-                        (float) VANILLA_GROUND_DRAG_FACTOR,
-                        inputs.airDragModifier);
+                inputs.pre262NativeMotion
+                        ? (float) VANILLA_GROUND_DRAG_FACTOR
+                        : computeModifiedFriction(
+                                (float) VANILLA_GROUND_DRAG_FACTOR,
+                                inputs.airDragModifier);
         float effectiveSpeedFactor =
                 Mth.lerp(
                         inputs.movementEfficiency,
@@ -307,8 +344,12 @@ final class SpiderVehicleMovementContext {
                     BlockState state = level.getBlockState(pos);
                     float friction = state.getFriction(level, pos, spider);
                     float speedFactor = state.getBlock().getSpeedFactor();
+                    //? if >=26.2 {
                     double blockBounciness =
                             state.getBounceRestitution(level, pos, spider);
+                    //?} else {
+                    /*double blockBounciness = 0.0;
+                    *///?}
                     if (!(friction > 0.0F)
                             || !Float.isFinite(friction)
                             || !(speedFactor >= 0.0F)
@@ -331,6 +372,16 @@ final class SpiderVehicleMovementContext {
                             && !fluid.is(FluidTags.LAVA)) {
                         return false;
                     }
+                    //? if <26.1 {
+                    /*if ((fluid.is(FluidTags.WATER)
+                                    && fluid.getFluidType()
+                                            != NeoForgeMod.WATER_TYPE.value())
+                            || (fluid.is(FluidTags.LAVA)
+                                    && fluid.getFluidType()
+                                            != NeoForgeMod.LAVA_TYPE.value())) {
+                        return false;
+                    }
+                    *///?}
                     scan.hasWater |= fluid.is(FluidTags.WATER);
                     scan.hasLava |= fluid.is(FluidTags.LAVA);
                 }
@@ -507,5 +558,6 @@ final class SpiderVehicleMovementContext {
             boolean pushedByFluid,
             boolean waterPresent,
             boolean lavaPresent,
+            boolean pre262NativeMotion,
             boolean fastLava) {}
 }

@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class CoffinNapManagerSourceTest {
@@ -40,10 +41,25 @@ class CoffinNapManagerSourceTest {
     @Test
     void votesPerDimensionUsingSleepRulesAndGamerule() throws IOException {
         String source = stripped(SOURCE);
+        String executingNode = System.getProperty("iamzombieq.test.nodeId");
+        assertTrue(Set.of("26.2.x", "26.1.x", "1.21.11", "1.21.10", "1.21.8")
+                        .contains(executingNode),
+                "Gradle must inject one of the five frozen Stonecutter nodes");
+        boolean genericGameRules = !executingNode.equals("1.21.10")
+                && !executingNode.equals("1.21.8");
+        String rules = "Game" + "Rules";
+        String levelRules = "level.get" + rules + "()";
+        String modernVote = levelRules + ".get(" + rules + ".PLAYERS_"
+                + "SLEEPING_PERCENTAGE)";
+        String legacyVote = levelRules + ".getInt(" + rules + ".RULE_PLAYERS_"
+                + "SLEEPING_PERCENTAGE)";
         String eligible = SourceScan.compact(
                 SourceScan.methodBody(source, "private static int countEligibleZombies"));
 
-        assertTrue(source.contains("GameRules.PLAYERS_SLEEPING_PERCENTAGE"), "the vote should use the players-sleeping-percentage gamerule");
+        assertEquals(1, SourceScan.countOccurrences(source, genericGameRules ? modernVote : legacyVote),
+                "the vote should use the node-native players-sleeping-percentage getter and key");
+        assertEquals(0, SourceScan.countOccurrences(source, genericGameRules ? legacyVote : modernVote),
+                "the vote must not mix players-sleeping-percentage API generations");
         assertTrue(source.contains("ZombieSleepRules.enoughCoffinSleepers"), "the vote should reuse the pure ZombieSleepRules math");
         assertTrue(source.contains("ZombieSleepRules.coffinSleepersNeeded"), "the progress message should reuse the pure needed-count math");
         assertTrue(eligible.contains("if(ZombiePlayerGates.isZombiePlayer(p)){n++;}"),
@@ -59,12 +75,38 @@ class CoffinNapManagerSourceTest {
     @Test
     void advancesToNightThroughTheSleepFinishedHook() throws IOException {
         String source = stripped(SOURCE);
+        String executingNode = System.getProperty("iamzombieq.test.nodeId");
+        assertTrue(Set.of("26.2.x", "26.1.x", "1.21.11", "1.21.10", "1.21.8")
+                        .contains(executingNode),
+                "Gradle must inject one of the five frozen Stonecutter nodes");
+        boolean worldClockApi = executingNode.equals("26.2.x") || executingNode.equals("26.1.x");
+        boolean genericGameRules = !executingNode.equals("1.21.10")
+                && !executingNode.equals("1.21.8");
 
-        assertTrue(source.contains("ClockTimeMarkers.NIGHT"), "the coffin should advance the clock to NIGHT (mirror of vanilla WAKE_UP_FROM_SLEEP)");
         assertTrue(source.contains("EventHooks.onSleepFinished"), "time advance should go through onSleepFinished for mod compatibility");
-        assertTrue(source.contains("ClockAdjustment.Marker"), "time advance should use a marker-based clock adjustment");
-        assertTrue(source.contains("GameRules.ADVANCE_TIME"), "time advance should respect the advance_time gamerule");
         assertTrue(source.contains("resetWeatherCycle"), "advancing to night should reset rain when advance_weather is on, like vanilla beds");
+        String rules = "Game" + "Rules";
+        String modernAdvanceTime = rules + ".ADVANCE_" + "TIME";
+        String legacyAdvanceTime = rules + ".RULE_" + "DAYLIGHT";
+        assertTrue(source.contains(genericGameRules ? modernAdvanceTime : legacyAdvanceTime),
+                "time advance should respect the node-native daylight-cycle gamerule");
+        if (worldClockApi) {
+            assertTrue(source.contains("ClockTimeMarkers.NIGHT"),
+                    "26.x should advance to the native NIGHT clock marker");
+            assertTrue(source.contains("ClockAdjustment.Marker"),
+                    "26.x should use a marker-based clock adjustment");
+            assertFalse(source.contains("nextLegacyNight"),
+                    "26.x must not use the flat legacy day-time bridge");
+        } else {
+            assertTrue(source.contains("nextLegacyNight"),
+                    "1.21.x should calculate the next flat day-time NIGHT tick");
+            assertTrue(source.contains("EventHooks.onSleepFinished(level, target, current)"),
+                    "1.21.x should use the node-native long sleep-finished hook");
+            assertTrue(source.contains("level.setDayTime(adjusted)"),
+                    "1.21.x should apply the hook-adjusted day time");
+            assertFalse(source.contains("ClockAdjustment") || source.contains("ClockTimeMarkers"),
+                    "1.21.x must not reference the absent world-clock API");
+        }
     }
 
     @Test
@@ -112,8 +154,9 @@ class CoffinNapManagerSourceTest {
                 "the anti-deadlock timeout check must run every tick, OUTSIDE the throttle gate");
         assertTrue(throttleBlock.contains("int needed = ZombieSleepRules.coffinSleepersNeeded(eligible, percentage);"),
                 "the needed-count calculation must live INSIDE the throttle gate");
-        assertTrue(throttleBlock.contains(
-                        "player.sendOverlayMessage(Component.translatable(ZombieSleepRules.coffinVoteProgressMessageKey(), deep, needed));"),
+        assertTrue(SourceScan.compact(throttleBlock).contains(SourceScan.compact(
+                        "player.sendSystemMessage(Component.translatable("
+                                + "ZombieSleepRules.coffinVoteProgressMessageKey(), deep, needed), true);")),
                 "the progress overlay send must live INSIDE the throttle gate, routed through"
                         + " coffinVoteProgressMessageKey(), with (deep, needed) in that order");
 
@@ -134,8 +177,9 @@ class CoffinNapManagerSourceTest {
     void votingProgressMessageKeepsDeepAndNeededArgumentOrder() throws IOException {
         String body = SourceScan.methodBody(stripped(SOURCE), "public static void onPlayerTick");
 
-        assertTrue(body.contains(
-                        "Component.translatable(ZombieSleepRules.coffinVoteProgressMessageKey(), deep, needed)"),
+        assertTrue(SourceScan.compact(body).contains(SourceScan.compact(
+                        "Component.translatable("
+                                + "ZombieSleepRules.coffinVoteProgressMessageKey(), deep, needed)")),
                 "the progress message must keep sending (deep, needed) in that exact order");
     }
 
@@ -186,16 +230,20 @@ class CoffinNapManagerSourceTest {
 
         assertTrue(wakeBody.contains("ZombieSleepRules.napWakeMessageKey(reason)"),
                 "wake must select its message key through ZombieSleepRules.napWakeMessageKey");
-        assertEquals(1, SourceScan.countOccurrences(wakeBody, "sendOverlayMessage("),
+        assertEquals(1, SourceScan.countOccurrences(
+                        SourceScan.compact(wakeBody),
+                        SourceScan.compact(
+                                "sendSystemMessage(Component.translatable("
+                                        + "ZombieSleepRules.napWakeMessageKey(reason)), true);")),
                 "wake must still send exactly one overlay message");
 
         int stopSleeping = wakeBody.indexOf("player.stopSleeping();");
         int napsRemove = wakeBody.indexOf("NAPS.remove(player.getUUID());");
-        int sendOverlay = wakeBody.indexOf("sendOverlayMessage(");
+        int sendOverlay = wakeBody.indexOf("sendSystemMessage(");
         assertTrue(stopSleeping >= 0 && napsRemove >= 0 && sendOverlay >= 0,
-                "stopSleeping, NAPS.remove, and sendOverlayMessage should all exist in wake");
+                "stopSleeping, NAPS.remove, and the overlay=true system packet should all exist in wake");
         assertTrue(stopSleeping < napsRemove && napsRemove < sendOverlay,
-                "order must stay: stopSleeping -> NAPS.remove -> sendOverlayMessage");
+                "order must stay: stopSleeping -> NAPS.remove -> overlay message");
     }
 
     @Test
@@ -211,7 +259,11 @@ class CoffinNapManagerSourceTest {
         // Slice the per-player loop itself (brace-balanced) so the overlay send and the wake sound are confirmed
         // to live INSIDE the loop, not merely somewhere in the method.
         String loopBody = SourceScan.blockBody(body, "for (UUID id : new ArrayList<>(NAPS.keySet()))");
-        assertEquals(1, SourceScan.countOccurrences(loopBody, "sendOverlayMessage("),
+        assertEquals(1, SourceScan.countOccurrences(
+                        SourceScan.compact(loopBody),
+                        SourceScan.compact(
+                                "p.sendSystemMessage(Component.translatable("
+                                        + "ZombieSleepRules.napWakeMessageKey(reason)), true);")),
                 "wakeAllInLevel must send exactly one overlay message per player, from one call site inside the loop");
         assertTrue(loopBody.contains(
                         "level.playSound(null, p.blockPosition(), SoundEvents.WOOL_PLACE, SoundSource.BLOCKS, 0.8F, 0.6F);"),

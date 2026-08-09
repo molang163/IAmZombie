@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 
 class PermanentMigrationLockTest {
@@ -130,6 +131,54 @@ class PermanentMigrationLockTest {
         assertFalse(port.events.contains("create-new"));
         assertFalse(port.events.contains("unlink"));
         assertFalse(port.events.contains("replace"));
+    }
+
+    @Test
+    void windowsBasicManualOnlyPolicyNeverInitializesAPreExistingEmptyLock() {
+        RecordingPort port = RecordingPort.validExisting();
+        port.payload = new byte[0];
+        String identity = port.identity;
+        PermanentMigrationLock.Request request = new PermanentMigrationLock.Request(
+                "iamzombieq-server.toml.iamzombieq-migration-v1.lock",
+                PAYLOAD,
+                identity,
+                MigrationAccessProfile.BASIC,
+                false,
+                true,
+                MigrationIdentityPolicy.EmptyLockRecoveryPolicy.MANUAL_ONLY);
+
+        AtomicBoolean targetGateCalled = new AtomicBoolean();
+        assertThrows(
+                IllegalStateException.class,
+                () -> new PermanentMigrationLock(port).acquire(request, () -> {
+                    targetGateCalled.set(true);
+                    return true;
+                }));
+
+        assertEquals(identity, port.identity);
+        assertEquals(0, port.payload.length);
+        assertFalse(targetGateCalled.get());
+        assertFalse(port.events.contains("write-payload"));
+        assertFalse(port.events.contains("force-file"));
+        assertFalse(port.events.contains("force-directory"));
+        assertFalse(port.events.contains("create-new"));
+        assertFalse(port.events.contains("unlink"));
+        assertFalse(port.events.contains("replace"));
+    }
+
+    @Test
+    void basicRequestCannotClaimExactFileKeyEmptyLockRecovery() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new PermanentMigrationLock.Request(
+                        "iamzombieq-server.toml.iamzombieq-migration-v1.lock",
+                        PAYLOAD,
+                        "synthetic-identity",
+                        MigrationAccessProfile.BASIC,
+                        false,
+                        true,
+                        MigrationIdentityPolicy.EmptyLockRecoveryPolicy
+                                .EXACT_FILE_KEY));
     }
 
     @Test
@@ -535,7 +584,8 @@ class PermanentMigrationLockTest {
                 "dev:7:ino:11",
                 MigrationAccessProfile.SECURE,
                 false,
-                false);
+                false,
+                MigrationIdentityPolicy.EmptyLockRecoveryPolicy.EXACT_FILE_KEY);
     }
 
     private static PermanentMigrationLock.Request newRequest() {
@@ -545,7 +595,8 @@ class PermanentMigrationLockTest {
                 "",
                 MigrationAccessProfile.SECURE,
                 false,
-                false);
+                false,
+                MigrationIdentityPolicy.EmptyLockRecoveryPolicy.EXACT_FILE_KEY);
     }
 
     private static void assertExistingFaultNeverRepairs(Fault fault) {

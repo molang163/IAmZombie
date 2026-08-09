@@ -25,7 +25,7 @@ import net.neoforged.neoforge.event.RegisterGameTestsEvent;
  * <p>SUN and DROWN integration cases are intentionally NOT registered here: every remaining SUN seam is per-tick
  * (sun-burn ignition) or gated on a private sun-fire window that only the per-tick path opens, and the drowned
  * underwater-mining seam needs a submersion state a no-op-tick FakePlayer cannot set cleanly. Those are deferred to
- * their existing L0 rule coverage ({@code ZombieSunlightRulesTest} / {@code ZombieDamageRulesTest}) per the
+ * their existing rule coverage ({@code ZombieSunlightRulesTest} / {@code ZombieDamageRulesTest}) per the
  * green-or-defer policy.
  */
 public final class IAmZombieGiantSunGameTests {
@@ -62,9 +62,13 @@ public final class IAmZombieGiantSunGameTests {
                 false,        // manualOnly
                 1,            // maxAttempts
                 1,            // requiredSuccesses
-                false,        // skyAccess (not needed; no SUN per-tick case here)
-                8);           // padding
+                false         // skyAccess (not needed; no SUN per-tick case here)
+                //? if >=26.1
+                , 8
+                );            // padding
         Identifier id = modId(name);
+        //? if <26.1
+        //LegacyGameTestPadding.register(id, 8);
         event.registerTest(id, new ConsumerGameTestInstance(id, info, body));
     }
 

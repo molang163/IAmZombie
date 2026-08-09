@@ -1,0 +1,15 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "dev.molang.iamzombieq.gametest.mixin",
+  "compatibilityLevel": "${mixin_java}",
+  "mixins": [
+    "LegacyGameTestPaddingBlockEntityMixin",
+    "LegacyGameTestPadding1218ClearMixin",
+    "LegacyGameTestPaddingGridSpawnerMixin",
+    "LegacyGameTestPaddingInfoMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

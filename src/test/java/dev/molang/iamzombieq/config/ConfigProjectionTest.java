@@ -80,7 +80,8 @@ class ConfigProjectionTest {
 
         assertThrows(IllegalArgumentException.class, () -> project(
                 MigrationTarget.SERVER,
-                parse(complete.replace("startingRottenFlesh = 9\n", "")),
+                parse(complete.replaceFirst(
+                        "(?m)^startingRottenFlesh = 9\\R", "")),
                 schema));
         assertThrows(IllegalArgumentException.class, () -> project(
                 MigrationTarget.SERVER,

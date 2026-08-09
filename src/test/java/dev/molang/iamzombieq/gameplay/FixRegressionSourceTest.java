@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.molang.iamzombieq.util.SourceScan;
+import dev.molang.iamzombieq.util.StonecutterCapabilityMatrix;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -66,11 +67,15 @@ class FixRegressionSourceTest {
     void giantStompAuraExcludesAllOwnedMountsNotJustSpiders() throws IOException {
         // #10: the stomp-aura exclusion must cover owned vanilla-tamed mounts (AbstractHorse, ZombieNautilus) via a
         // null-safe getOwnerReference() check, not only the custom Spider mount.
-        String src = Files.readString(GIANT);
+        String src = SourceScan.stripComments(Files.readString(GIANT));
         assertTrue(src.contains("!isOwnedMount(target, player)"), "the aura filter should call isOwnedMount");
         assertFalse(src.contains("isOwnedSpiderMount"), "the narrower isOwnedSpiderMount should have been renamed away");
         String helper = SourceScan.methodBody(src, "private static boolean isOwnedMount");
-        assertTrue(helper.contains("AbstractHorse") && helper.contains("ZombieNautilus") && helper.contains("getOwnerReference"),
-                "isOwnedMount must exclude tamed AbstractHorse + ZombieNautilus via getOwnerReference");
+        assertTrue(helper.contains("AbstractHorse") && helper.contains("getOwnerReference"),
+                "isOwnedMount must exclude tamed AbstractHorse via getOwnerReference");
+        assertEquals(
+                StonecutterCapabilityMatrix.hasNautilusEntityApi(),
+                helper.contains("ZombieNautilus"),
+                "the owned ZombieNautilus exemption must follow the platform capability exactly");
     }
 }

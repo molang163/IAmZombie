@@ -90,9 +90,13 @@ public final class IAmZombieMountGameTests {
                 false,        // manualOnly
                 1,            // maxAttempts
                 1,            // requiredSuccesses
-                false,        // skyAccess
-                8);           // padding
+                false         // skyAccess
+                //? if >=26.1
+                , 8
+                );            // padding
         Identifier id = modId(name);
+        //? if <26.1
+        //LegacyGameTestPadding.register(id, 8);
         event.registerTest(id, new ConsumerGameTestInstance(id, info, body));
     }
 

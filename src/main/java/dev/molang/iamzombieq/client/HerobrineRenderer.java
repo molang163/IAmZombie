@@ -8,8 +8,13 @@ import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.client.renderer.entity.HumanoidMobRenderer;
 import net.minecraft.client.renderer.entity.layers.EyesLayer;
 import net.minecraft.client.renderer.entity.state.HumanoidRenderState;
+// CROSS_VERSION-RENDER-TYPE-NAMESPACE:herobrine-imports
+//? if >=1.21.11 {
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
+//?} else {
+/*import net.minecraft.client.renderer.RenderType;
+*///?}
 import net.minecraft.resources.Identifier;
 
 public class HerobrineRenderer extends HumanoidMobRenderer<HerobrineEntity, HumanoidRenderState, HumanoidModel<HumanoidRenderState>> {
@@ -21,7 +26,12 @@ public class HerobrineRenderer extends HumanoidMobRenderer<HerobrineEntity, Huma
         this.addLayer(new EyesLayer<>(this) {
             @Override
             public RenderType renderType() {
+                // CROSS_VERSION-RENDER-TYPE-NAMESPACE:herobrine-eyes
+                //? if >=1.21.11 {
                 return RenderTypes.eyes(HEROBRINE_EYES);
+                //?} else {
+                /*return RenderType.eyes(HEROBRINE_EYES);
+                *///?}
             }
         });
     }

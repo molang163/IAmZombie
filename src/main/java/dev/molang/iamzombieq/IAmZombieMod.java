@@ -59,7 +59,11 @@ public final class IAmZombieMod {
         NeoForge.EVENT_BUS.register(ZombieSleepEvents.class);
         NeoForge.EVENT_BUS.register(CoffinNapManager.class);
         NeoForge.EVENT_BUS.register(DifficultyGuardEvents.class);
+        //? if >=1.21.10 {
         if (FMLEnvironment.getDist() == Dist.CLIENT) {
+        //?} else {
+        /*if (FMLEnvironment.dist == Dist.CLIENT) {
+        *///?}
             dev.molang.iamzombieq.client.IAmZombieClient.register(modEventBus);
         }
         modContainer.registerConfig(ModConfig.Type.SERVER, IAmZombieServerConfig.SPEC);

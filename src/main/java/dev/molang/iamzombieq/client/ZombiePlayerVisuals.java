@@ -18,15 +18,34 @@ import net.minecraft.client.model.geom.ModelLayerLocation;
 import net.minecraft.client.model.geom.ModelLayers;
 import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.model.geom.PartPose;
+//? if >=26.1
 import net.minecraft.client.model.monster.piglin.AdultZombifiedPiglinModel;
+//? if >=26.1
 import net.minecraft.client.model.monster.piglin.BabyZombifiedPiglinModel;
+//? if >=26.1
 import net.minecraft.client.model.monster.zombie.BabyDrownedModel;
+//? if >=26.1
 import net.minecraft.client.model.monster.zombie.BabyZombieModel;
+//? if >=1.21.11
+import net.minecraft.client.model.monster.piglin.ZombifiedPiglinModel;
+//? if <1.21.11
+//import net.minecraft.client.model.ZombifiedPiglinModel;
+//? if >=1.21.11
 import net.minecraft.client.model.monster.zombie.DrownedModel;
+//? if <1.21.11
+//import net.minecraft.client.model.DrownedModel;
+//? if >=1.21.11
 import net.minecraft.client.model.monster.zombie.ZombieModel;
+//? if <1.21.11
+//import net.minecraft.client.model.ZombieModel;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.AbstractClientPlayer;
+//? if >=1.21.10
 import net.minecraft.client.renderer.SubmitNodeCollector;
+//? if <1.21.10
+//import net.minecraft.client.renderer.MultiBufferSource;
+// CROSS_VERSION-ARMOR-MODEL-SET-API:import
+//? if >=1.21.10
 import net.minecraft.client.renderer.entity.ArmorModelSet;
 import net.minecraft.client.renderer.entity.LivingEntityRenderer;
 import net.minecraft.client.renderer.entity.RenderLayerParent;
@@ -34,20 +53,36 @@ import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.client.renderer.entity.layers.EquipmentLayerRenderer;
 import net.minecraft.client.renderer.entity.layers.HumanoidArmorLayer;
 import net.minecraft.client.renderer.entity.layers.ItemInHandLayer;
+//? if >=1.21.10
 import net.minecraft.client.renderer.entity.state.AvatarRenderState;
+//? if <1.21.10
+//import net.minecraft.client.renderer.entity.state.PlayerRenderState;
 import net.minecraft.client.renderer.entity.state.ZombieRenderState;
 import net.minecraft.client.renderer.item.ItemStackRenderState;
+// CROSS_VERSION-RENDER-TYPE-NAMESPACE:visuals-import
+//? if >=1.21.11 {
 import net.minecraft.client.renderer.rendertype.RenderTypes;
+//?} else {
+/*import net.minecraft.client.renderer.RenderType;
+*///?}
 import net.minecraft.client.renderer.texture.OverlayTexture;
+//? if >=1.21.10
 import net.minecraft.core.ClientAsset;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
+//? if >=26.2
 import net.minecraft.world.entity.EntityTypes;
+//? if <26.2
+//import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.HumanoidArm;
 import net.minecraft.world.entity.player.Player;
+//? if >=1.21.10 {
 import net.minecraft.world.entity.player.PlayerModelType;
 import net.minecraft.world.entity.player.PlayerSkin;
+//?} else {
+/*import net.minecraft.client.resources.PlayerSkin;
+*///?}
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.client.event.RenderPlayerEvent;
 import net.neoforged.neoforge.client.event.RenderArmEvent;
@@ -66,7 +101,10 @@ public final class ZombiePlayerVisuals {
         monsterModels = createMonsterModels(context.getModelSet(), context.getEquipmentRenderer());
     }
 
+    //? if >=1.21.10
     public static void applyPlayerSkin(AvatarRenderState state) {
+    //? if <1.21.10
+    //public static void applyPlayerSkin(PlayerRenderState state) {
         if (!ZombieRenderRules.usesMonsterTexture(IAmZombieClientConfig.PLAYER_SKIN_MODE.get())) {
             return;
         }
@@ -93,7 +131,10 @@ public final class ZombiePlayerVisuals {
         state.showRightPants = false;
     }
 
+    //? if >=1.21.10
     public static void renderMonsterBody(RenderPlayerEvent.Pre<?> event) {
+    //? if <1.21.10
+    //public static void renderMonsterBody(RenderPlayerEvent.Pre event) {
         if (!ZombieRenderRules.usesMonsterTexture(IAmZombieClientConfig.PLAYER_SKIN_MODE.get())) {
             return;
         }
@@ -103,7 +144,10 @@ public final class ZombiePlayerVisuals {
             return;
         }
 
+        //? if >=1.21.10
         AvatarRenderState avatarState = event.getRenderState();
+        //? if <1.21.10
+        //PlayerRenderState avatarState = event.getRenderState();
         Entity entity = minecraft.level.getEntity(avatarState.id);
         if (!(entity instanceof Player player) || !shouldUseZombieVisuals(player)) {
             return;
@@ -116,15 +160,20 @@ public final class ZombiePlayerVisuals {
         Identifier texture = textureFor(data.state().form(), baby);
 
         PoseStack poseStack = event.getPoseStack();
-        SubmitNodeCollector collector = event.getSubmitNodeCollector();
         int overlay = LivingEntityRenderer.getOverlayCoords(zombieState, 0.0F);
         poseStack.pushPose();
         applyLivingBodyTransform(zombieState, poseStack);
+        //? if >=1.21.10 {
+        SubmitNodeCollector collector = event.getSubmitNodeCollector();
         collector.submitModel(
                 model,
                 zombieState,
                 poseStack,
+                // CROSS_VERSION-RENDER-TYPE-NAMESPACE:visuals-cutout
+                //? if >=1.21.11
                 RenderTypes.entityCutout(texture),
+                //? if <1.21.11
+                //RenderType.entityCutout(texture),
                 zombieState.lightCoords,
                 overlay,
                 -1,
@@ -133,43 +182,102 @@ public final class ZombiePlayerVisuals {
                 null
         );
         submitMonsterBodyLayers(models(), zombieState, avatarState, poseStack, collector);
+        //?} else {
+        /*int packedLight = event.getPackedLight();
+        MultiBufferSource bufferSource = event.getMultiBufferSource();
+        model.setupAnim(zombieState);
+        model.renderToBuffer(
+                poseStack,
+                bufferSource.getBuffer(RenderType.entityCutout(texture)),
+                packedLight,
+                overlay,
+                -1);
+        renderMonsterBodyLayers(
+                models(), zombieState, avatarState, poseStack, bufferSource, packedLight);
+        *///?}
         poseStack.popPose();
         event.setCanceled(true);
     }
 
+    //? if >=26.2
     public static void renderFirstPersonArm(RenderArmEvent<?> event) {
-        if (!ZombieRenderRules.usesMonsterTexture(IAmZombieClientConfig.FIRST_PERSON_ARM_SKIN_MODE.get())
-                || !(event.getAvatar() instanceof AbstractClientPlayer player)
+    //? if <26.2
+    //public static void renderFirstPersonArm(RenderArmEvent event) {
+        if (!ZombieRenderRules.usesMonsterTexture(IAmZombieClientConfig.FIRST_PERSON_ARM_SKIN_MODE.get())) {
+            return;
+        }
+        //? if >=26.2 {
+        if (!(event.getAvatar() instanceof AbstractClientPlayer player)
                 || !shouldUseZombieVisuals(player)) {
             return;
         }
+        //?} else {
+        /*AbstractClientPlayer player = event.getPlayer();
+        if (!shouldUseZombieVisuals(player)) {
+            return;
+        }
+        *///?}
 
         PlayerZombieData data = player.getData(IAmZombieAttachments.PLAYER_ZOMBIE);
         ZombieForm form = data.state().form();
         boolean baby = data.state().size() == ZombieSize.BABY;
         HumanoidArm armSide = event.getArm();
         HumanoidModel<?> monsterModel = models().firstPersonModelFor(form, baby);
-        ModelPart arm = monsterModel.getArm(armSide);
+        ModelPart arm = humanoidArm(monsterModel, armSide);
         Identifier texture = firstPersonTextureFor(form, baby);
 
         arm.resetPose();
         arm.visible = true;
         arm.skipDraw = false;
         arm.zRot = armSide == HumanoidArm.RIGHT ? 0.1F : -0.1F;
-        Vector3f offset = firstPersonArmOffset(event.getArmPart(), monsterModel.root(), arm, armSide);
+        //? if >=26.2 {
+        ModelPart playerArm = event.getArmPart();
+        //?}
+        //? if >=1.21.10 && <26.2 {
+        /*ModelPart playerArm = humanoidArm(Minecraft.getInstance()
+                .getEntityRenderDispatcher()
+                .getPlayerRenderer(player)
+                .getModel(),
+                armSide);
+        *///?}
+        //? if <1.21.10 {
+        /*net.minecraft.client.renderer.entity.player.PlayerRenderer playerRenderer =
+                (net.minecraft.client.renderer.entity.player.PlayerRenderer) Minecraft.getInstance()
+                        .getEntityRenderDispatcher()
+                        .getRenderer(player);
+        ModelPart playerArm = humanoidArm(playerRenderer.getModel(), armSide);
+        *///?}
+        Vector3f offset = firstPersonArmOffset(playerArm, monsterModel.root(), arm, armSide);
         PoseStack poseStack = event.getPoseStack();
+        //? if >=26.2
+        int packedLight = event.getLightCoords();
+        //? if <26.2
+        //int packedLight = event.getPackedLight();
         poseStack.pushPose();
         try {
             poseStack.translate(offset.x(), offset.y(), offset.z());
             applyPartPose(poseStack, monsterModel.root().getInitialPose());
+            //? if >=1.21.10 {
             event.getSubmitNodeCollector().submitModelPart(
                     arm,
                     poseStack,
+                    // CROSS_VERSION-RENDER-TYPE-NAMESPACE:visuals-translucent
+                    //? if >=1.21.11
                     RenderTypes.entityTranslucent(texture),
-                    event.getLightCoords(),
+                    //? if <1.21.11
+                    //RenderType.entityTranslucent(texture),
+                    packedLight,
                     OverlayTexture.NO_OVERLAY,
                     null
             );
+            //?} else {
+            /*arm.render(
+                    poseStack,
+                    event.getMultiBufferSource().getBuffer(RenderType.entityTranslucent(texture)),
+                    packedLight,
+                    OverlayTexture.NO_OVERLAY,
+                    -1);
+            *///?}
         } finally {
             poseStack.popPose();
         }
@@ -222,7 +330,11 @@ public final class ZombiePlayerVisuals {
                 }
                 Vector3f center = new Vector3f();
                 for (ModelPart.Vertex vertex : polygon.vertices()) {
+                    //? if >=1.21.10 {
                     center.add(vertex.worldX(), vertex.worldY(), vertex.worldZ());
+                    //?} else {
+                    /*center.add(vertex.pos().x() / 16.0F, vertex.pos().y() / 16.0F, vertex.pos().z() / 16.0F);
+                    *///?}
                 }
                 center.div(polygon.vertices().length);
                 if (farthest[0] == null || center.y() > farthest[0].y()) {
@@ -249,15 +361,24 @@ public final class ZombiePlayerVisuals {
      * and {@link #clearSkins}).
      */
     private static PlayerSkin cachedZombieSkin(UUID id, ZombieForm form, boolean baby, PlayerSkin original) {
+        //? if >=1.21.10 {
         ClientAsset.Texture cape = original.cape();
         ClientAsset.Texture elytra = original.elytra();
+        //?} else {
+        /*Identifier cape = original.capeTexture();
+        Identifier elytra = original.elytraTexture();
+        *///?}
         CachedSkin cached = SKIN_CACHE.get(id);
         if (cached != null && cached.form == form && cached.baby == baby
                 && java.util.Objects.equals(cached.cape, cape) && java.util.Objects.equals(cached.elytra, elytra)) {
             return cached.skin;
         }
         Identifier texture = textureFor(form, baby);
+        //? if >=1.21.10 {
         PlayerSkin skin = new PlayerSkin(new FixedTexture(texture), cape, elytra, PlayerModelType.WIDE, false);
+        //?} else {
+        /*PlayerSkin skin = new PlayerSkin(texture, null, cape, elytra, PlayerSkin.Model.WIDE, false);
+        *///?}
         SKIN_CACHE.put(id, new CachedSkin(form, baby, cape, elytra, skin));
         return skin;
     }
@@ -271,6 +392,8 @@ public final class ZombiePlayerVisuals {
     }
 
     private static Identifier textureFor(ZombieForm form, boolean baby) {
+        // CROSS_VERSION-BABY-MONSTER-TEXTURE:visuals-form
+        //? if >=26.1 {
         if (baby) {
             return switch (form) {
                 case DROWNED -> Identifier.withDefaultNamespace("textures/entity/zombie/drowned_baby.png");
@@ -279,13 +402,17 @@ public final class ZombiePlayerVisuals {
                 default -> Identifier.withDefaultNamespace("textures/entity/zombie/zombie_baby.png");
             };
         }
+        //?}
         return Identifier.parse(ZombieRenderRules.monsterTexturePath(form));
     }
 
     private static Identifier firstPersonTextureFor(ZombieForm form, boolean baby) {
+        // CROSS_VERSION-BABY-MONSTER-TEXTURE:visuals-first-person-piglin
+        //? if >=26.1 {
         if (baby && form == ZombieForm.ZOMBIFIED_PIGLIN) {
             return Identifier.withDefaultNamespace("textures/entity/piglin/zombified_piglin_baby.png");
         }
+        //?}
         return textureFor(form, baby);
     }
 
@@ -300,43 +427,124 @@ public final class ZombiePlayerVisuals {
     private static MonsterModels createMonsterModels(EntityModelSet entityModels, EquipmentLayerRenderer equipmentRenderer) {
         return new MonsterModels(
                 new ZombieModel<>(entityModels.bakeLayer(ModelLayers.ZOMBIE)),
+                //? if >=26.1
                 new BabyZombieModel<>(entityModels.bakeLayer(ModelLayers.ZOMBIE_BABY)),
+                //? if <26.1
+                //new ZombieModel<>(entityModels.bakeLayer(ModelLayers.ZOMBIE_BABY)),
                 new DrownedModel(entityModels.bakeLayer(ModelLayers.DROWNED)),
+                //? if >=26.1
                 new BabyDrownedModel(entityModels.bakeLayer(ModelLayers.DROWNED_BABY)),
+                //? if <26.1
+                //new DrownedModel(entityModels.bakeLayer(ModelLayers.DROWNED_BABY)),
                 new ZombieModel<>(entityModels.bakeLayer(ModelLayers.HUSK)),
+                //? if >=26.1
                 new BabyZombieModel<>(entityModels.bakeLayer(ModelLayers.HUSK_BABY)),
+                //? if <26.1
+                //new ZombieModel<>(entityModels.bakeLayer(ModelLayers.HUSK_BABY)),
+                //? if >=26.1
                 new AdultZombifiedPiglinModel(entityModels.bakeLayer(ModelLayers.ZOMBIFIED_PIGLIN)),
+                //? if <26.1
+                //new ZombifiedPiglinModel(entityModels.bakeLayer(ModelLayers.ZOMBIFIED_PIGLIN)),
+                //? if >=26.1
                 new BabyZombifiedPiglinModel(entityModels.bakeLayer(ModelLayers.ZOMBIFIED_PIGLIN_BABY)),
+                //? if <26.1
+                //new ZombifiedPiglinModel(entityModels.bakeLayer(ModelLayers.ZOMBIFIED_PIGLIN_BABY)),
+                // CROSS_VERSION-ARMOR-MODEL-SET-API:factory
+                //? if >=1.21.10 {
                 layerSet(ModelLayers.ZOMBIE_ARMOR, ModelLayers.ZOMBIE_BABY_ARMOR, entityModels, equipmentRenderer),
                 layerSet(ModelLayers.DROWNED_ARMOR, ModelLayers.DROWNED_BABY_ARMOR, entityModels, equipmentRenderer),
                 layerSet(ModelLayers.HUSK_ARMOR, ModelLayers.HUSK_BABY_ARMOR, entityModels, equipmentRenderer)
+                //?} else {
+                /*layerSet(
+                        ModelLayers.ZOMBIE_INNER_ARMOR,
+                        ModelLayers.ZOMBIE_OUTER_ARMOR,
+                        ModelLayers.ZOMBIE_BABY_INNER_ARMOR,
+                        ModelLayers.ZOMBIE_BABY_OUTER_ARMOR,
+                        entityModels,
+                        equipmentRenderer),
+                layerSet(
+                        ModelLayers.DROWNED_INNER_ARMOR,
+                        ModelLayers.DROWNED_OUTER_ARMOR,
+                        ModelLayers.DROWNED_BABY_INNER_ARMOR,
+                        ModelLayers.DROWNED_BABY_OUTER_ARMOR,
+                        entityModels,
+                        equipmentRenderer),
+                layerSet(
+                        ModelLayers.HUSK_INNER_ARMOR,
+                        ModelLayers.HUSK_OUTER_ARMOR,
+                        ModelLayers.HUSK_BABY_INNER_ARMOR,
+                        ModelLayers.HUSK_BABY_OUTER_ARMOR,
+                        entityModels,
+                        equipmentRenderer)
+                *///?}
         );
     }
 
+    // CROSS_VERSION-ARMOR-MODEL-SET-API:helper
     private static MonsterLayerSet layerSet(
+            //? if >=1.21.10 {
             ArmorModelSet<ModelLayerLocation> adultArmor,
             ArmorModelSet<ModelLayerLocation> babyArmor,
+            //?} else {
+            /*ModelLayerLocation adultInnerArmor,
+            ModelLayerLocation adultOuterArmor,
+            ModelLayerLocation babyInnerArmor,
+            ModelLayerLocation babyOuterArmor,
+            *///?}
             EntityModelSet entityModels,
             EquipmentLayerRenderer equipmentRenderer
     ) {
         ZombieModel<ZombieRenderState> adultParentModel = new ZombieModel<>(entityModels.bakeLayer(ModelLayers.ZOMBIE));
+        //? if >=26.1
         ZombieModel<ZombieRenderState> babyParentModel = new BabyZombieModel<>(entityModels.bakeLayer(ModelLayers.ZOMBIE_BABY));
+        //? if <26.1
+        //ZombieModel<ZombieRenderState> babyParentModel = new ZombieModel<>(entityModels.bakeLayer(ModelLayers.ZOMBIE_BABY));
         RenderLayerParent<ZombieRenderState, ZombieModel<ZombieRenderState>> adultParent = () -> adultParentModel;
         RenderLayerParent<ZombieRenderState, ZombieModel<ZombieRenderState>> babyParent = () -> babyParentModel;
+        //? if >=1.21.10 {
+        HumanoidArmorLayer<ZombieRenderState, ZombieModel<ZombieRenderState>, HumanoidModel<ZombieRenderState>> armor =
+                equipmentRenderer == null ? null : new HumanoidArmorLayer<>(
+                        adultParent,
+                        ArmorModelSet.bake(adultArmor, entityModels, HumanoidModel::new),
+                        ArmorModelSet.bake(babyArmor, entityModels, HumanoidModel::new),
+                        equipmentRenderer
+                );
         return new MonsterLayerSet(
                 adultParentModel,
                 babyParentModel,
-                equipmentRenderer == null ? null : new HumanoidArmorLayer<>(
-                                adultParent,
-                                ArmorModelSet.bake(adultArmor, entityModels, HumanoidModel::new),
-                                ArmorModelSet.bake(babyArmor, entityModels, HumanoidModel::new),
-                                equipmentRenderer
-                        ),
+                armor,
+                armor,
                 new ZombiePlayerItemInHandLayer(adultParent),
                 new ZombiePlayerItemInHandLayer(babyParent)
         );
+        //?} else {
+        /*HumanoidArmorLayer<ZombieRenderState, ZombieModel<ZombieRenderState>, HumanoidModel<ZombieRenderState>>
+                adultArmorLayer = equipmentRenderer == null ? null : new HumanoidArmorLayer<>(
+                        adultParent,
+                        new HumanoidModel<>(entityModels.bakeLayer(adultInnerArmor)),
+                        new HumanoidModel<>(entityModels.bakeLayer(adultOuterArmor)),
+                        equipmentRenderer
+                );
+        HumanoidArmorLayer<ZombieRenderState, ZombieModel<ZombieRenderState>, HumanoidModel<ZombieRenderState>>
+                babyArmorLayer = equipmentRenderer == null ? null : new HumanoidArmorLayer<>(
+                        babyParent,
+                        new HumanoidModel<>(entityModels.bakeLayer(babyInnerArmor)),
+                        new HumanoidModel<>(entityModels.bakeLayer(babyOuterArmor)),
+                        equipmentRenderer
+                );
+        return new MonsterLayerSet(
+                adultParentModel,
+                babyParentModel,
+                adultArmorLayer,
+                babyArmorLayer,
+                new ZombiePlayerItemInHandLayer(adultParent),
+                new ZombiePlayerItemInHandLayer(babyParent)
+        );
+        *///?}
     }
 
+    // CROSS_VERSION-ARMOR-MODEL-SET-API:age-selection
+    //? if >=1.21.10 {
     private static void submitMonsterBodyLayers(
             MonsterModels models,
             ZombieRenderState zombieState,
@@ -347,11 +555,35 @@ public final class ZombiePlayerVisuals {
         MonsterLayerSet layers = models.layersFor(zombieState.entityType, zombieState.isBaby);
         ZombieModel<ZombieRenderState> parentModel = layers.parentModel(zombieState.isBaby);
         parentModel.setupAnim(zombieState);
-        if (layers.armor != null) {
-            layers.armor.submit(poseStack, collector, zombieState.lightCoords, zombieState, zombieState.yRot, zombieState.xRot);
+        HumanoidArmorLayer<ZombieRenderState, ZombieModel<ZombieRenderState>, HumanoidModel<ZombieRenderState>>
+                armor = layers.armor(zombieState.isBaby);
+        if (armor != null) {
+            armor.submit(poseStack, collector, zombieState.lightCoords, zombieState, zombieState.yRot, zombieState.xRot);
         }
         layers.handItems(zombieState.isBaby).submit(poseStack, collector, zombieState.lightCoords, zombieState, avatarState);
     }
+    //?} else {
+    /*private static void renderMonsterBodyLayers(
+            MonsterModels models,
+            ZombieRenderState zombieState,
+            PlayerRenderState avatarState,
+            PoseStack poseStack,
+            MultiBufferSource bufferSource,
+            int packedLight
+    ) {
+        MonsterLayerSet layers = models.layersFor(zombieState.entityType, zombieState.isBaby);
+        ZombieModel<ZombieRenderState> parentModel = layers.parentModel(zombieState.isBaby);
+        parentModel.setupAnim(zombieState);
+        HumanoidArmorLayer<ZombieRenderState, ZombieModel<ZombieRenderState>, HumanoidModel<ZombieRenderState>>
+                armor = layers.armor(zombieState.isBaby);
+        if (armor != null) {
+            armor.render(
+                    poseStack, bufferSource, packedLight, zombieState, zombieState.yRot, zombieState.xRot);
+        }
+        layers.handItems(zombieState.isBaby).render(
+                poseStack, bufferSource, packedLight, zombieState, avatarState);
+    }
+    *///?}
 
     private static void applyLivingBodyTransform(ZombieRenderState state, PoseStack poseStack) {
         float scale = state.scale;
@@ -387,7 +619,10 @@ public final class ZombiePlayerVisuals {
         return headEquipment;
     }
 
+    //? if >=1.21.10
     private static ZombieRenderState copyToZombieState(AvatarRenderState source, ZombieForm form, boolean baby) {
+    //? if <1.21.10
+    //private static ZombieRenderState copyToZombieState(PlayerRenderState source, ZombieForm form, boolean baby) {
         ZombieRenderState target = new ZombieRenderState();
         target.entityType = switch (form) {
             case DROWNED -> EntityTypes.DROWNED;
@@ -405,13 +640,17 @@ public final class ZombiePlayerVisuals {
         target.isInvisible = source.isInvisible;
         target.isDiscrete = source.isDiscrete;
         target.displayFireAnimation = source.displayFireAnimation;
+        //? if >=1.21.10 {
         target.lightCoords = source.lightCoords;
         target.outlineColor = source.outlineColor;
+        //?}
         target.passengerOffset = source.passengerOffset;
         target.nameTag = source.nameTag;
+        //? if >=26.1
         target.scoreText = source.scoreText;
         target.nameTagAttachment = source.nameTagAttachment;
         target.leashStates = source.leashStates;
+        //? if >=1.21.10
         target.shadowRadius = source.shadowRadius;
         target.bodyRot = source.bodyRot;
         target.yRot = source.yRot;
@@ -421,6 +660,8 @@ public final class ZombiePlayerVisuals {
         target.walkAnimationSpeed = source.walkAnimationSpeed;
         target.scale = source.scale;
         target.ageScale = source.ageScale;
+        // CROSS_VERSION-LIVING-RENDER-KINETIC-FEEDBACK-API
+        //? if >=1.21.11
         target.ticksSinceKineticHitFeedback = source.ticksSinceKineticHitFeedback;
         target.isUpsideDown = source.isUpsideDown;
         target.isFullyFrozen = source.isFullyFrozen;
@@ -451,10 +692,14 @@ public final class ZombiePlayerVisuals {
         target.mainArm = source.mainArm;
         target.attackArm = source.attackArm;
         target.rightArmPose = source.rightArmPose;
+        // CROSS_VERSION-HELD-ITEM-RENDER-STATE-API
+        //? if >=1.21.11
         target.rightHandItemStack = source.rightHandItemStack;
         target.leftArmPose = source.leftArmPose;
+        //? if >=1.21.11 {
         target.leftHandItemStack = source.leftHandItemStack;
         target.swingAnimationType = source.swingAnimationType;
+        //?}
         target.attackTime = source.attackTime;
         target.isAggressive = true;
         return target;
@@ -462,13 +707,13 @@ public final class ZombiePlayerVisuals {
 
     private record MonsterModels(
             ZombieModel<ZombieRenderState> normal,
-            BabyZombieModel<ZombieRenderState> babyNormal,
+            ZombieModel<ZombieRenderState> babyNormal,
             DrownedModel drowned,
-            BabyDrownedModel babyDrowned,
+            DrownedModel babyDrowned,
             ZombieModel<ZombieRenderState> husk,
-            BabyZombieModel<ZombieRenderState> babyHusk,
-            AdultZombifiedPiglinModel zombifiedPiglin,
-            BabyZombifiedPiglinModel babyZombifiedPiglin,
+            ZombieModel<ZombieRenderState> babyHusk,
+            ZombifiedPiglinModel zombifiedPiglin,
+            ZombifiedPiglinModel babyZombifiedPiglin,
             MonsterLayerSet normalLayers,
             MonsterLayerSet drownedLayers,
             MonsterLayerSet huskLayers
@@ -511,12 +756,20 @@ public final class ZombiePlayerVisuals {
     private record MonsterLayerSet(
             ZombieModel<ZombieRenderState> adultParentModel,
             ZombieModel<ZombieRenderState> babyParentModel,
-            HumanoidArmorLayer<ZombieRenderState, ZombieModel<ZombieRenderState>, HumanoidModel<ZombieRenderState>> armor,
+            HumanoidArmorLayer<ZombieRenderState, ZombieModel<ZombieRenderState>,
+                    HumanoidModel<ZombieRenderState>> adultArmor,
+            HumanoidArmorLayer<ZombieRenderState, ZombieModel<ZombieRenderState>,
+                    HumanoidModel<ZombieRenderState>> babyArmor,
             ZombiePlayerItemInHandLayer adultHandItems,
             ZombiePlayerItemInHandLayer babyHandItems
     ) {
         ZombieModel<ZombieRenderState> parentModel(boolean baby) {
             return baby ? babyParentModel : adultParentModel;
+        }
+
+        HumanoidArmorLayer<ZombieRenderState, ZombieModel<ZombieRenderState>,
+                HumanoidModel<ZombieRenderState>> armor(boolean baby) {
+            return baby ? babyArmor : adultArmor;
         }
 
         ZombiePlayerItemInHandLayer handItems(boolean baby) {
@@ -529,6 +782,8 @@ public final class ZombiePlayerVisuals {
             super(renderer);
         }
 
+        // CROSS_VERSION-HELD-ITEM-SUBMIT-API
+        //? if >=1.21.11 {
         private void submit(
                 PoseStack poseStack,
                 SubmitNodeCollector collector,
@@ -552,20 +807,97 @@ public final class ZombiePlayerVisuals {
         ) {
             super.submitArmWithItem(state, item, itemStack, arm, poseStack, submitNodeCollector, lightCoords);
         }
+        //?}
+        //? if >=1.21.10 && <1.21.11 {
+        /*private void submit(
+                PoseStack poseStack,
+                SubmitNodeCollector collector,
+                int lightCoords,
+                ZombieRenderState zombieState,
+                AvatarRenderState avatarState
+        ) {
+            submitArmWithItem(zombieState, avatarState.rightHandItem, HumanoidArm.RIGHT, poseStack, collector, lightCoords);
+            submitArmWithItem(zombieState, avatarState.leftHandItem, HumanoidArm.LEFT, poseStack, collector, lightCoords);
+        }
+
+        @Override
+        protected void submitArmWithItem(
+                ZombieRenderState state,
+                ItemStackRenderState item,
+                HumanoidArm arm,
+                PoseStack poseStack,
+                SubmitNodeCollector collector,
+                int lightCoords
+        ) {
+            super.submitArmWithItem(state, item, arm, poseStack, collector, lightCoords);
+        }
+        *///?}
+        //? if <1.21.10 {
+        /*private void render(
+                PoseStack poseStack,
+                MultiBufferSource bufferSource,
+                int packedLight,
+                ZombieRenderState zombieState,
+                PlayerRenderState avatarState
+        ) {
+            renderArmWithItem(
+                    zombieState,
+                    avatarState.rightHandItem,
+                    HumanoidArm.RIGHT,
+                    poseStack,
+                    bufferSource,
+                    packedLight);
+            renderArmWithItem(
+                    zombieState,
+                    avatarState.leftHandItem,
+                    HumanoidArm.LEFT,
+                    poseStack,
+                    bufferSource,
+                    packedLight);
+        }
+
+        @Override
+        protected void renderArmWithItem(
+                ZombieRenderState state,
+                ItemStackRenderState item,
+                HumanoidArm arm,
+                PoseStack poseStack,
+                MultiBufferSource bufferSource,
+                int packedLight
+        ) {
+            super.renderArmWithItem(state, item, arm, poseStack, bufferSource, packedLight);
+        }
+        *///?}
     }
 
+    static ModelPart humanoidArm(HumanoidModel<?> model, HumanoidArm arm) {
+        // CROSS_VERSION-HUMANOID-ARM-ACCESS-API
+        //? if >=1.21.11 {
+        return model.getArm(arm);
+        //?} else {
+        /*return arm == HumanoidArm.LEFT ? model.leftArm : model.rightArm;
+        *///?}
+    }
+
+    //? if >=1.21.10 {
     private record FixedTexture(Identifier texturePath) implements ClientAsset.Texture {
         @Override
         public Identifier id() {
             return texturePath;
         }
     }
+    //?}
 
     private record CachedSkin(
             ZombieForm form,
             boolean baby,
+            //? if >=1.21.10 {
             ClientAsset.Texture cape,
             ClientAsset.Texture elytra,
+            //?} else {
+            /*Identifier cape,
+            Identifier elytra,
+            *///?}
             PlayerSkin skin
     ) {
     }

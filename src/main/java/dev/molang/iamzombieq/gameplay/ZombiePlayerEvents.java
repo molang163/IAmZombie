@@ -38,7 +38,10 @@ import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.tags.BiomeTags;
 import net.minecraft.tags.BlockTags;
+// CROSS_VERSION-SUN-BURN-ENVIRONMENT-GATE:import
+//? if >=1.21.11 {
 import net.minecraft.world.attribute.EnvironmentAttributes;
+//?}
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.effect.MobEffect;
@@ -46,7 +49,10 @@ import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
+//? if >=26.2
 import net.minecraft.world.entity.EntityTypes;
+//? if <26.2
+//import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.monster.Giant;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -398,12 +404,21 @@ public final class ZombiePlayerEvents {
     private static String damageTypeId(DamageSource source) {
         return source.typeHolder()
                 .unwrapKey()
+                //? if >=1.21.11 {
                 .map(key -> key.identifier().toString())
+                //?} else {
+                /*.map(key -> key.location().toString())
+                *///?}
                 .orElse("");
     }
 
     private static boolean isSunBurnTick(ServerPlayer player) {
+        // CROSS_VERSION-SUN-BURN-ENVIRONMENT-GATE:value
+        //? if >=1.21.11 {
         boolean monstersBurn = player.level().environmentAttributes().getValue(EnvironmentAttributes.MONSTERS_BURN, player.position());
+        //?} else {
+        /*boolean monstersBurn = player.level().isBrightOutside();
+        *///?}
         float brightness = player.getLightLevelDependentMagicValue();
         // Preserve the vanilla RNG short-circuit: the random tick chance is only sampled once the monster-burn and
         // brightness preconditions pass. Draw nextFloat() only behind that gate, then pass the sampled value into the

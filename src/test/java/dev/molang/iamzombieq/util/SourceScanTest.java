@@ -60,7 +60,8 @@ class SourceScanTest {
         IOException ex = assertThrows(IOException.class, () -> SourceScan.mainJava(missing));
         assertTrue(ex.getMessage().contains("DefinitelyMissingSourceScanFixture.java"),
                 "the error should identify the missing relative path");
-        assertTrue(ex.getMessage().contains("src/main/java"),
+        assertTrue(ex.getMessage().contains(
+                        Path.of("src", "main", "java").toString()),
                 "the error should identify the resolved source root");
     }
 

@@ -7,7 +7,11 @@ import java.util.function.LongSupplier;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.network.ConfigurationTask;
 import net.minecraft.server.network.ServerCommonPacketListenerImpl;
+//? if >=1.21.11 {
 import net.minecraft.util.Util;
+//?} else {
+/*import net.minecraft.Util;
+*///?}
 import net.neoforged.neoforge.network.configuration.ICustomConfigurationTask;
 
 final class ConfigAuthorityConfigurationTask
@@ -48,7 +52,9 @@ final class ConfigAuthorityConfigurationTask
         sender.accept(snapshot);
     }
 
+    //? if >=1.21.10 {
     @Override
+    //?}
     public boolean tick() {
         if (!started) {
             return false;

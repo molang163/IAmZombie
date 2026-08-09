@@ -49,7 +49,10 @@ public final class OmenLightsSavedData extends SavedData {
     // logic for mod data), and on version-pinned 26.2 this data is always written at the current
     // version, so no datafixer is ever expected to run. The 3-arg constructor passes null for us.
     public static final SavedDataType<OmenLightsSavedData> TYPE = new SavedDataType<>(
+            //? if >=26.1
             ModIds.id("herobrine_omen_lights"),
+            //? if <26.1
+            //"iamzombieq/herobrine_omen_lights",
             OmenLightsSavedData::new,
             CODEC
     );

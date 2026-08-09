@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
@@ -42,6 +43,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.bus.api.ICancellableEvent;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.EntityLeaveLevelEvent;
@@ -136,17 +138,23 @@ public final class HerobrineEvents {
 
     @SubscribeEvent
     public static void onEntityInteract(PlayerInteractEvent.EntityInteract event) {
-        if (event.getTarget() instanceof HerobrineEntity) {
-            event.setCanceled(true);
-            event.setCancellationResult(InteractionResult.SUCCESS_SERVER);
-        }
+        cancelHerobrineInteraction(event.getTarget(), event, event::setCancellationResult);
     }
 
-    @SubscribeEvent
+    //? if <26.2 {
+    /*@SubscribeEvent
     public static void onEntityInteractSpecific(PlayerInteractEvent.EntityInteractSpecific event) {
-        if (event.getTarget() instanceof HerobrineEntity) {
+        cancelHerobrineInteraction(event.getTarget(), event, event::setCancellationResult);
+    }
+    *///?}
+
+    private static void cancelHerobrineInteraction(
+            Entity target,
+            ICancellableEvent event,
+            Consumer<InteractionResult> setCancellationResult) {
+        if (target instanceof HerobrineEntity) {
             event.setCanceled(true);
-            event.setCancellationResult(InteractionResult.SUCCESS_SERVER);
+            setCancellationResult.accept(InteractionResult.SUCCESS_SERVER);
         }
     }
 

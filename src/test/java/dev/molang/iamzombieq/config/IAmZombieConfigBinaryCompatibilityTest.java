@@ -4,15 +4,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.molang.iamzombieq.util.ClassFileAbiReader;
+import dev.molang.iamzombieq.util.ClassFileAbiReader.ClassInfo;
+import dev.molang.iamzombieq.util.ClassFileAbiReader.MemberInfo;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.lang.classfile.AttributedElement;
-import java.lang.classfile.Attributes;
-import java.lang.classfile.ClassFile;
-import java.lang.classfile.ClassModel;
-import java.lang.reflect.AccessFlag;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -31,8 +30,7 @@ import org.junit.jupiter.api.Test;
  */
 class IAmZombieConfigBinaryCompatibilityTest {
     private static final String OWNER = "dev/molang/iamzombieq/IAmZombieConfig";
-    private static final Path CLASS_FILE = Path.of(
-            "build/classes/java/main/dev/molang/iamzombieq/IAmZombieConfig.class");
+    private static final String MAIN_CLASSES_DIR_PROPERTY = "iamzombieq.test.mainClassesDir";
     private static final String FIXTURE =
             "/dev/molang/iamzombieq/config/iamzombieconfig-public-binary-1.0.3.tsv";
     private static final Comparator<AbiEntry> ABI_ORDER = Comparator
@@ -57,36 +55,51 @@ class IAmZombieConfigBinaryCompatibilityTest {
     }
 
     private static List<AbiEntry> readCompiledClass() throws IOException {
-        assertTrue(Files.isRegularFile(CLASS_FILE), "compiled IAmZombieConfig.class must exist at " + CLASS_FILE);
+        Path classFile = compiledClassRoot().resolve("dev/molang/iamzombieq/IAmZombieConfig.class");
+        assertTrue(Files.isRegularFile(classFile), "compiled IAmZombieConfig.class must exist at " + classFile);
 
-        // ClassFile.parse reads the class-file bytes only. It neither defines the class nor runs <clinit>.
-        ClassModel model = ClassFile.of().parse(CLASS_FILE);
-        String owner = model.thisClass().asInternalName();
+        // The reader consumes class-file bytes only. It neither defines the class nor runs <clinit>.
+        ClassInfo model = ClassFileAbiReader.read(classFile);
+        //? if >=1.21.11 {
+        assertEquals(
+                dev.molang.iamzombieq.util.JdkClassFileAbiOracle.read(classFile),
+                model,
+                "Java 21-safe reader must match the independent JDK class-file oracle for " + OWNER);
+        //?}
+        String owner = model.internalName();
+        assertEquals(OWNER, owner, "class-file owner must retain the stable JVM name");
         List<AbiEntry> entries = new ArrayList<>();
-        entries.add(new AbiEntry("CLASS", owner, "-", access(model.flags().flagsMask()), "-", signature(model)));
+        entries.add(new AbiEntry(
+                "CLASS", owner, "-", access(model.accessFlags()), "-", model.signature().orElse("-")));
 
         model.fields().stream()
-                .filter(field -> field.flags().has(AccessFlag.PUBLIC))
+                .filter(MemberInfo::isPublic)
                 .map(field -> new AbiEntry(
                         "FIELD",
                         owner,
-                        field.fieldName().stringValue(),
-                        access(field.flags().flagsMask()),
-                        field.fieldType().stringValue(),
-                        signature(field)))
+                        field.name(),
+                        access(field.accessFlags()),
+                        field.descriptor(),
+                        field.signature().orElse("-")))
                 .forEach(entries::add);
 
         model.methods().stream()
-                .filter(method -> method.flags().has(AccessFlag.PUBLIC))
+                .filter(MemberInfo::isPublic)
                 .map(method -> new AbiEntry(
                         "METHOD",
                         owner,
-                        method.methodName().stringValue(),
-                        access(method.flags().flagsMask()),
-                        method.methodType().stringValue(),
-                        signature(method)))
+                        method.name(),
+                        access(method.accessFlags()),
+                        method.descriptor(),
+                        method.signature().orElse("-")))
                 .forEach(entries::add);
         return entries;
+    }
+
+    private static Path compiledClassRoot() {
+        String configured = System.getProperty(MAIN_CLASSES_DIR_PROPERTY);
+        assertNotNull(configured, "Gradle must inject the active node's compiled main class directory");
+        return Path.of(configured);
     }
 
     private static List<AbiEntry> readFixture() throws IOException {
@@ -147,12 +160,6 @@ class IAmZombieConfigBinaryCompatibilityTest {
 
     private static String access(int flags) {
         return String.format(Locale.ROOT, "0x%04x", flags);
-    }
-
-    private static String signature(AttributedElement element) {
-        return element.findAttribute(Attributes.signature())
-                .map(attribute -> attribute.signature().stringValue())
-                .orElse("-");
     }
 
     private record AbiEntry(
