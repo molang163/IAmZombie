@@ -22,12 +22,15 @@ public final class IAmZombieHerobrineGameTests {
             RegisterGameTestsEvent event,
             Holder<TestEnvironmentDefinition<?>> lethalEnv,
             Holder<TestEnvironmentDefinition<?>> gazeEnv,
+            Holder<TestEnvironmentDefinition<?>> interactEnv,
             Holder<TestEnvironmentDefinition<?>> caveEnv,
             Holder<TestEnvironmentDefinition<?>> lifetimeEnv) {
         register(event, "herobrine_lethal_attack_respawns_in_place", lethalEnv, EMPTY_STRUCTURE, 40, 0, false, 8,
                 IAmZombieHerobrineGameTestBodies::herobrineLethalAttackRespawnsInPlace);
         register(event, "herobrine_gaze_records_nonlethal_sighting", gazeEnv, EMPTY_STRUCTURE, 40, 0, false, 8,
                 IAmZombieHerobrineGameTestBodies::herobrineGazeRecordsNonlethalSighting);
+        register(event, "herobrine_right_click_is_cancelled", interactEnv, EMPTY_STRUCTURE, 40, 0, false, 8,
+                IAmZombieHerobrineGameTestBodies::herobrineRightClickIsCancelled);
         register(event, "herobrine_natural_cave_spawn_sets_phase", caveEnv, CAVE_STRUCTURE, 40, 20, true, 8,
                 IAmZombieHerobrineGameTestBodies::herobrineNaturalCaveSpawnSetsPhase);
         register(event, "herobrine_discards_after_max_lifetime", lifetimeEnv, EMPTY_STRUCTURE, 930, 0, false, 8,
@@ -54,9 +57,13 @@ public final class IAmZombieHerobrineGameTests {
                 false,        // manualOnly
                 1,            // maxAttempts
                 1,            // requiredSuccesses
-                skyAccess,
-                padding);
+                skyAccess
+                //? if >=26.1
+                , padding
+                );
         Identifier id = modId(name);
+        //? if <26.1
+        //LegacyGameTestPadding.register(id, padding);
         event.registerTest(id, new ConsumerGameTestInstance(id, info, body));
     }
 

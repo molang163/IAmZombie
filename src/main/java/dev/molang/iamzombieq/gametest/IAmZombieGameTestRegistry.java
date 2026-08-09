@@ -3,7 +3,13 @@ package dev.molang.iamzombieq.gametest;
 import com.mojang.serialization.MapCodec;
 import dev.molang.iamzombieq.IAmZombieMod;
 import java.lang.reflect.Field;
+//? if <26.1
+//import java.util.ArrayDeque;
 import java.util.Arrays;
+//? if <26.1
+//import java.util.IdentityHashMap;
+//? if <26.1
+//import java.util.Map;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.gametest.framework.TestEnvironmentDefinition;
@@ -30,7 +36,7 @@ import net.neoforged.neoforge.registries.RegisterEvent;
  * (every HARD one is a bare {@link TestEnvironmentDefinition.SetDifficulty} HARD; every default one is a no-op empty
  * {@code AllOf}). This class collapses that boilerplate: it registers the two shared environments <b>exactly once</b>
  * and hands the resulting {@link Holder}s to the shared suites' {@code registerAll}. The Herobrine lifecycle suite
- * uses four additional HARD environments so its temporary global config overrides run in separate batches. The two
+ * uses five additional HARD environments so its temporary global config overrides run in separate batches. The two
  * coffin lifecycle tests likewise use distinct no-op environments so their connected-player vote populations and
  * static nap state cannot share a batch.
  *
@@ -52,6 +58,12 @@ public final class IAmZombieGameTestRegistry {
                 Registries.TEST_ENVIRONMENT_DEFINITION_TYPE,
                 modId("herobrine_cave_sea_level"),
                 () -> HerobrineCaveSeaLevelEnvironment.CODEC);
+        //? if <26.2 {
+        /*event.register(
+                Registries.TEST_ENVIRONMENT_DEFINITION_TYPE,
+                modId("restoring_hard_difficulty"),
+                () -> RestoringHardDifficultyEnvironment.CODEC);
+        *///?}
         event.register(
                 Registries.TEST_FUNCTION,
                 ConsumerGameTestInstance.DISPATCHER_ID,
@@ -72,6 +84,9 @@ public final class IAmZombieGameTestRegistry {
                         new TestEnvironmentDefinition.SetDifficulty(Difficulty.HARD));
         Holder<TestEnvironmentDefinition<?>> herobrineGazeEnv =
                 event.registerEnvironment(modId("env_herobrine_gaze"),
+                        new TestEnvironmentDefinition.SetDifficulty(Difficulty.HARD));
+        Holder<TestEnvironmentDefinition<?>> herobrineInteractEnv =
+                event.registerEnvironment(modId("env_herobrine_interact"),
                         new TestEnvironmentDefinition.SetDifficulty(Difficulty.HARD));
         Holder<TestEnvironmentDefinition<?>> herobrineCaveEnv =
                 event.registerEnvironment(modId("env_herobrine_cave"),
@@ -95,7 +110,10 @@ public final class IAmZombieGameTestRegistry {
         IAmZombieMountGameTests.registerAll(event, defaultEnv, hardEnv);
         IAmZombieFixRegressionGameTests.registerAll(event, defaultEnv, hardEnv);
         IAmZombieHerobrineGameTests.registerAll(
-                event, herobrineLethalEnv, herobrineGazeEnv, herobrineCaveEnv, herobrineLifetimeEnv);
+                event, herobrineLethalEnv, herobrineGazeEnv, herobrineInteractEnv,
+                herobrineCaveEnv, herobrineLifetimeEnv);
+        //? if <26.1
+        //LegacyGameTestPadding.seal();
     }
 
     private static Identifier modId(String path) {
@@ -109,12 +127,21 @@ public final class IAmZombieGameTestRegistry {
      * the exact original world-generation context when the batch ends.
      */
     private static final class HerobrineCaveSeaLevelEnvironment
+            //? if >=26.1
             implements TestEnvironmentDefinition<HerobrineCaveSeaLevelEnvironment.SavedContext> {
+            //? if <26.1
+            //implements TestEnvironmentDefinition {
         private static final HerobrineCaveSeaLevelEnvironment INSTANCE = new HerobrineCaveSeaLevelEnvironment();
         private static final MapCodec<HerobrineCaveSeaLevelEnvironment> CODEC = MapCodec.unit(INSTANCE);
 
+        //? if <26.1
+        //private final Map<ServerLevel, ArrayDeque<SavedContext>> savedContexts = new IdentityHashMap<>();
+
         @Override
+        //? if >=26.1
         public SavedContext setup(ServerLevel level) {
+        //? if <26.1
+        //public void setup(ServerLevel level) {
             ChunkMap chunkMap = level.getChunkSource().chunkMap;
             Field worldGenContextField = findWorldGenContextField();
             WorldGenContext original = readWorldGenContext(worldGenContextField, chunkMap);
@@ -140,14 +167,36 @@ public final class IAmZombieGameTestRegistry {
                 writeWorldGenContext(worldGenContextField, chunkMap, original);
                 throw new IllegalStateException("failed to install the Herobrine cave GameTest sea level");
             }
+            //? if >=26.1
             return new SavedContext(worldGenContextField, chunkMap, original);
+            //? if <26.1 {
+            /*savedContexts.computeIfAbsent(level, ignored -> new ArrayDeque<>())
+                    .push(new SavedContext(worldGenContextField, chunkMap, original));
+            *///?}
         }
 
+        //? if >=26.1 {
         @Override
         public void teardown(ServerLevel level, SavedContext savedContext) {
             writeWorldGenContext(
                     savedContext.worldGenContextField(), savedContext.chunkMap(), savedContext.worldGenContext());
         }
+        //?} else {
+        /*@Override
+        public void teardown(ServerLevel level) {
+            ArrayDeque<SavedContext> stack = savedContexts.get(level);
+            if (stack == null || stack.isEmpty()) {
+                throw new IllegalStateException("Herobrine cave GameTest environment was not active");
+            }
+            SavedContext savedContext = stack.peek();
+            writeWorldGenContext(
+                    savedContext.worldGenContextField(), savedContext.chunkMap(), savedContext.worldGenContext());
+            stack.pop();
+            if (stack.isEmpty()) {
+                savedContexts.remove(level);
+            }
+        }
+        *///?}
 
         @Override
         public MapCodec<HerobrineCaveSeaLevelEnvironment> codec() {

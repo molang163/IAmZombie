@@ -55,6 +55,7 @@ class MigrationNamespaceGuardTest {
         assertTrue(lexicalMove.contains(
                 "binding.physicalParent().resolve(checkedDestination)"));
         assertTrue(lexicalMove.contains("StandardCopyOption.ATOMIC_MOVE"));
+        assertFalse(lexicalMove.contains("StandardCopyOption.REPLACE_EXISTING"));
 
         String secureMove = between(
                 jdk,
@@ -65,6 +66,24 @@ class MigrationNamespaceGuardTest {
         assertTrue(secureMove.contains("Path.of(checkedDestination)"));
         assertFalse(secureMove.contains("binding.logicalParent()"));
         assertFalse(secureMove.contains("binding.physicalParent()"));
+
+        assertTrue(jdk.contains(".emptyLockRecoveryPolicy("));
+        assertTrue(jdk.contains("request.profile(), binding"));
+        assertFalse(jdk.contains(
+                "EmptyLockRecoveryPolicy.EXACT_FILE_KEY"));
+        String lockVerify = between(
+                jdk,
+                "public void verifyBound(",
+                "private void verifyPathnameReopensAsHeldFile(",
+                jdk.indexOf("public void verifyBound("));
+        assertTrue(lockVerify.contains(
+                "if (profile == MigrationAccessProfile.BASIC)"));
+        assertTrue(lockVerify.contains("verifyPathnameReopensAsHeldFile("));
+        assertFalse(lockVerify.contains("backend.openNofollow("));
+        assertTrue(jdk.contains("backend.openFile("));
+        assertTrue(jdk.contains("requireSamePathnameMetadata("));
+        assertTrue(jdk.contains("rebound.tryLock()"));
+        assertTrue(jdk.contains("OverlappingFileLockException"));
     }
 
     private static String productionCore() throws IOException {

@@ -17,9 +17,12 @@ import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.EntityType;
+//? if >=26.2
 import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.monster.zombie.ZombifiedPiglin;
 import net.minecraft.world.Difficulty;
+//? if <1.21.10
+//import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
@@ -94,7 +97,12 @@ public final class ZombieReinforcementEvents {
                 // Establish anger BEFORE setTarget: setTarget fires LivingChangeTargetEvent, and the
                 // undead-ignore-zombie-player handler would otherwise null a target that is a zombie player before
                 // anger is recorded (group help would no-op).
+                // CROSS_VERSION-PERSISTENT-ANGER-TARGET-API
+                //? if >=1.21.11 {
                 piglin.setPersistentAngerTarget(EntityReference.of(attacker));
+                //?} else {
+                /*piglin.setPersistentAngerTarget(attacker.getUUID());
+                *///?}
                 piglin.startPersistentAngerTimer();
             }
             ally.setTarget(attacker);
@@ -111,7 +119,14 @@ public final class ZombieReinforcementEvents {
      */
     private static void attemptSpawnReinforcements(ServerLevel level, ServerPlayer player, LivingEntity attacker,
             EntityType<? extends Mob> reinforcementType) {
+        //? if >=1.21.10 {
         if (!ZombieReinforcementRules.canSpawnReinforcements(gameDifficulty(level.getDifficulty()), level.isSpawningMonsters())) {
+        //?} else {
+        /*if (!ZombieReinforcementRules.canSpawnReinforcements(
+                gameDifficulty(level.getDifficulty()),
+                level.getServer().isSpawningMonsters()
+                        && level.getGameRules().getBoolean(GameRules.RULE_DOMOBSPAWNING))) {
+        *///?}
             return;
         }
         var random = player.getRandom();

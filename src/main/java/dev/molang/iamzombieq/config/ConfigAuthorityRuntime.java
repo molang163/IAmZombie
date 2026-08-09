@@ -1,11 +1,13 @@
 package dev.molang.iamzombieq.config;
 
+import dev.molang.iamzombieq.IAmZombieMod;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 import net.minecraft.network.Connection;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.network.ConfigurationTask;
+import net.minecraft.server.network.ServerConfigurationPacketListenerImpl;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
@@ -51,6 +53,36 @@ final class ConfigAuthorityRuntime {
         ConfigAuthorityConnections.beginServer(connection, snapshot);
         return new ConfigAuthorityConfigurationTask(snapshot);
     }
+
+    //? if <1.21.10 {
+    /*static void tickLegacyServerConfiguration(
+            ConfigurationTask currentTask,
+            ServerConfigurationPacketListenerImpl listener) {
+        Objects.requireNonNull(listener, "listener");
+        if (!(currentTask
+                instanceof ConfigAuthorityConfigurationTask authorityTask)) {
+            return;
+        }
+
+        Connection connection = listener.getConnection();
+        try {
+            if (authorityTask.tick()) {
+                throw new ConfigAuthorityProtocolException(
+                        "Configuration authority task attempted to finish "
+                                + "without its acknowledgement");
+            }
+        } catch (RuntimeException rejected) {
+            ConfigAuthorityConnections.clear(connection);
+            IAmZombieMod.LOGGER.warn(
+                    "Configuration authority task failed; disconnecting {}",
+                    connection.getRemoteAddress(),
+                    rejected);
+            listener.disconnect(rejection(
+                    "SERVER authority task failed: "
+                            + rejected.getMessage()));
+        }
+    }
+    *///?}
 
     /**
      * Demotes a newly-entered client configuration connection to PENDING.

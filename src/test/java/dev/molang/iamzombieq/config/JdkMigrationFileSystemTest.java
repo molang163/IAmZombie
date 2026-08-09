@@ -1,30 +1,65 @@
 package dev.molang.iamzombieq.config;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 class JdkMigrationFileSystemTest {
+    private static final int NODE_JAVA_FEATURE = Integer.parseInt(
+            System.getProperty("iamzombieq.test.runtimeJavaFeature"));
+
     @TempDir
     Path temporaryDirectory;
+
+    @Test
+    void bindingAlwaysIncludesDriveOrFilesystemRootThroughLogicalParent()
+            throws IOException {
+        Path parent = Files.createDirectories(
+                temporaryDirectory.resolve("nested/config"));
+        Path target = parent.resolve("iamzombieq-server.toml");
+
+        MigrationBinding binding = MigrationBinding.capture(
+                new JdkMigrationFileSystem().observeBinding(target));
+
+        assertEquals(target.getRoot(), binding.ancestors().getFirst().path());
+        assertEquals(parent, binding.ancestors().getLast().path());
+    }
+
+    private static JdkMigrationFileSystem certifiedFileSystem() {
+        return new JdkMigrationFileSystem();
+    }
+
+    private static JdkMigrationFileSystem certifiedFileSystem(
+            JdkMigrationFileSystem.ContentOpenHook hook) {
+        return new JdkMigrationFileSystem(hook);
+    }
 
     @Test
     void storeSessionExposesRawMetadataThroughItsBoundRelativeBackend()
@@ -67,6 +102,83 @@ class JdkMigrationFileSystemTest {
     }
 
     @Test
+    @EnabledOnOs(OS.LINUX)
+    void defaultObservationRetainsTheCertifiedNodeRuntimeFeature()
+            throws IOException {
+        Path legacy = temporaryDirectory.resolve("iamzombieq-common.toml");
+        Path target = temporaryDirectory.resolve("iamzombieq-server.toml");
+        String legacySentinel = "legacy-preservation-sentinel";
+        Files.writeString(legacy, legacySentinel);
+        JdkMigrationFileSystem defaultFileSystem =
+                new JdkMigrationFileSystem();
+        MigrationBinding defaultBinding = MigrationBinding.capture(
+                defaultFileSystem.observeBinding(target));
+        MigrationAccessProfile.Capabilities defaultCapabilities =
+                defaultFileSystem.capabilities(defaultBinding);
+
+        assertEquals(NODE_JAVA_FEATURE, Runtime.version().feature());
+        assertEquals(NODE_JAVA_FEATURE, defaultBinding.javaFeature());
+        assertEquals(NODE_JAVA_FEATURE, defaultCapabilities.javaFeature());
+        assertEquals("Linux", defaultCapabilities.operatingSystem());
+        assertEquals("file", defaultCapabilities.providerScheme());
+        assertEquals(
+                "sun.nio.fs.LinuxFileSystemProvider",
+                defaultCapabilities.providerClass());
+        assertTrue(defaultCapabilities.defaultProvider());
+        assertTrue(defaultCapabilities.secureDirectoryStream());
+        assertTrue(defaultCapabilities.nofollowMetadata());
+        assertTrue(defaultCapabilities.nofollowOpen());
+        assertTrue(defaultCapabilities.atomicMove());
+        assertEquals(
+                MigrationAccessProfile.SECURE,
+                MigrationAccessProfile.select(
+                        defaultCapabilities, false));
+        try (JdkMigrationFileSystem.StoreSession ignored =
+                defaultFileSystem.openStore(
+                        MigrationAccessProfile.SECURE,
+                        defaultBinding,
+                        legacy)) {
+            assertFalse(Files.exists(target));
+        }
+
+        JdkMigrationFileSystem certifiedFixture = certifiedFileSystem();
+        MigrationBinding certifiedBinding = MigrationBinding.capture(
+                certifiedFixture.observeBinding(target));
+        assertEquals(NODE_JAVA_FEATURE, certifiedBinding.javaFeature());
+        assertEquals(
+                MigrationAccessProfile.SECURE,
+                MigrationAccessProfile.select(
+                        certifiedFixture.capabilities(certifiedBinding),
+                        false));
+        assertEquals(legacySentinel, Files.readString(legacy));
+        assertFalse(Files.exists(target));
+        for (Path artifact :
+                MigrationFileSystem.ArtifactPaths.forTarget(target).fixedCandidates()) {
+            assertFalse(Files.exists(artifact));
+        }
+    }
+
+    @Test
+    void capabilityObservationFixtureRemainsPackagePrivate()
+            throws NoSuchMethodException {
+        int classModifiers = JdkMigrationFileSystem.class.getModifiers();
+        JdkMigrationFileSystem.class.getDeclaredConstructor();
+        JdkMigrationFileSystem.class.getDeclaredConstructor(
+                JdkMigrationFileSystem.ContentOpenHook.class);
+        int constructorModifiers = JdkMigrationFileSystem.class
+                .getDeclaredConstructor(
+                        JdkMigrationFileSystem.ContentOpenHook.class,
+                        int.class)
+                .getModifiers();
+
+        assertFalse(Modifier.isPublic(classModifiers));
+        assertFalse(Modifier.isProtected(classModifiers));
+        assertFalse(Modifier.isPublic(constructorModifiers));
+        assertFalse(Modifier.isProtected(constructorModifiers));
+        assertFalse(Modifier.isPrivate(constructorModifiers));
+    }
+
+    @Test
     void zeroLockRecoveryRejectsSymlinkAndNonregularLockWithoutArtifacts()
             throws IOException {
         byte[] legacyBytes;
@@ -98,7 +210,7 @@ class JdkMigrationFileSystemTest {
                 Files.createDirectory(artifacts.lock());
             }
             JdkMigrationFileSystem fileSystem =
-                    new JdkMigrationFileSystem();
+                    certifiedFileSystem();
             MigrationBinding binding = MigrationBinding.capture(
                     fileSystem.observeBinding(target));
             MigrationAccessProfile profile =
@@ -155,9 +267,10 @@ class JdkMigrationFileSystemTest {
     }
 
     @Test
+    @EnabledOnOs(OS.LINUX)
     void publisherMetadataFailureRetainsTheConcreteBackendCause()
             throws IOException {
-        JdkMigrationFileSystem fileSystem = new JdkMigrationFileSystem();
+        JdkMigrationFileSystem fileSystem = certifiedFileSystem();
         Path legacy = temporaryDirectory.resolve("iamzombieq-common.toml");
         Path target = temporaryDirectory.resolve("iamzombieq-server.toml");
         MigrationBinding binding =
@@ -205,8 +318,11 @@ class JdkMigrationFileSystemTest {
         Path alternate = Files.writeString(
                 temporaryDirectory.resolve("alternate.toml"), "BBBB");
         Path held = temporaryDirectory.resolve("held.toml");
+        Path physicalTarget = target.toRealPath();
+        AtomicBoolean swapped = new AtomicBoolean();
+        AtomicBoolean restored = new AtomicBoolean();
         JdkMigrationFileSystem.ContentOpenHook hook = (point, path) -> {
-            if (!path.equals(target)) {
+            if (!path.equals(physicalTarget)) {
                 return;
             }
             if (point
@@ -214,14 +330,16 @@ class JdkMigrationFileSystemTest {
                             .BEFORE_PRIMARY_OPEN) {
                 Files.move(target, held, StandardCopyOption.ATOMIC_MOVE);
                 Files.move(alternate, target, StandardCopyOption.ATOMIC_MOVE);
+                swapped.set(true);
             } else if (point
                     == JdkMigrationFileSystem.ContentOpenPoint
                             .AFTER_PRIMARY_READ) {
                 Files.move(target, alternate, StandardCopyOption.ATOMIC_MOVE);
                 Files.move(held, target, StandardCopyOption.ATOMIC_MOVE);
+                restored.set(true);
             }
         };
-        JdkMigrationFileSystem fileSystem = new JdkMigrationFileSystem(hook);
+        JdkMigrationFileSystem fileSystem = certifiedFileSystem(hook);
         MigrationBinding binding =
                 MigrationBinding.capture(fileSystem.observeBinding(target));
         MigrationAccessProfile profile = MigrationAccessProfile.select(
@@ -238,6 +356,8 @@ class JdkMigrationFileSystemTest {
             assertTrue(failure.getMessage().contains("bound migration content"));
         }
 
+        assertTrue(swapped.get(), "the replacement hook must use the bound real path");
+        assertTrue(restored.get(), "the replacement hook must restore the original leaf");
         assertEquals("AAAA", Files.readString(target));
         assertEquals("BBBB", Files.readString(alternate));
     }
@@ -245,7 +365,7 @@ class JdkMigrationFileSystemTest {
     @Test
     void realBoundStoreMigratesAndRecoversWithoutLegacyReseed()
             throws IOException {
-        JdkMigrationFileSystem fileSystem = new JdkMigrationFileSystem();
+        JdkMigrationFileSystem fileSystem = certifiedFileSystem();
         Path legacy = temporaryDirectory.resolve("iamzombieq-common.toml");
         Path target = temporaryDirectory.resolve("iamzombieq-server.toml");
         try (InputStream input = getClass().getResourceAsStream(
@@ -301,9 +421,554 @@ class JdkMigrationFileSystemTest {
     }
 
     @Test
+    @EnabledOnOs(OS.LINUX)
+    void realCommittedPublicationFaultsResumeEveryArtifactWithoutRepublish()
+            throws IOException {
+        for (AtomicConfigPublisher.Artifact artifact
+                : AtomicConfigPublisher.Artifact.values()) {
+            Path directory = Files.createDirectory(
+                    temporaryDirectory.resolve(
+                            "committed-" + artifact.name().toLowerCase()));
+            Path legacy = Files.write(
+                    directory.resolve("iamzombieq-common.toml"),
+                    LegacyConfigParserTest.fixtureBytes());
+            Path target = directory.resolve("iamzombieq-server.toml");
+            MigrationFileSystem.ArtifactPaths artifacts =
+                    MigrationFileSystem.ArtifactPaths.forTarget(target);
+            AtomicBoolean fired = new AtomicBoolean();
+            MigrationFaultInjector committedFault = point -> {
+                if (point.artifact() == artifact
+                        && point.operation()
+                                == MigrationFaultInjector.Operation.ATOMIC_MOVE
+                        && point.timing()
+                                == MigrationFaultInjector.Timing.AFTER
+                        && point.phase() == committedFaultPhase(artifact)
+                        && fired.compareAndSet(false, true)) {
+                    throw new IllegalStateException(
+                            "synthetic committed publication " + artifact);
+                }
+            };
+
+            RealMigrationRun first = realMigrationRun(
+                    new JdkMigrationFileSystem(), legacy, target, true);
+            try (JdkMigrationFileSystem.StoreSession store =
+                    first.fileSystem().openStore(
+                            first.profile(), first.binding(), legacy)) {
+                MigrationFailure failure = assertThrows(
+                        MigrationFailure.class,
+                        () -> new ConfigMigrationEngine(
+                                        ConfigSchemaCatalog.load(),
+                                        committedFault)
+                                .migrate(first.request(), store),
+                        artifact.name());
+                assertTrue(failure.synthetic(), artifact.name());
+            }
+            assertTrue(fired.get(), artifact.name());
+
+            Path destination = committedDestination(artifacts, artifact);
+            Path stage = committedStage(artifacts, artifact);
+            assertTrue(Files.isRegularFile(destination), artifact.name());
+            assertFalse(Files.exists(stage), artifact.name());
+            RealFileSnapshot committed = realFileSnapshot(destination);
+            Files.writeString(
+                    legacy,
+                    "corrupt live legacy after committed " + artifact);
+
+            AtomicInteger legacyContentOpens = new AtomicInteger();
+            AtomicBoolean republished = new AtomicBoolean();
+            JdkMigrationFileSystem restartedFileSystem =
+                    new JdkMigrationFileSystem((point, path) -> {
+                        if (path.equals(legacy)) {
+                            legacyContentOpens.incrementAndGet();
+                        }
+                    });
+            RealMigrationRun restarted = realMigrationRun(
+                    restartedFileSystem, legacy, target, true);
+            MigrationFaultInjector publicationRecorder = point -> {
+                if (point.artifact() == artifact
+                        && point.operation()
+                                == MigrationFaultInjector.Operation.ATOMIC_MOVE) {
+                    republished.set(true);
+                }
+            };
+            MigrationTargetState recovered;
+            try (JdkMigrationFileSystem.StoreSession store =
+                    restarted.fileSystem().openStore(
+                            restarted.profile(), restarted.binding(), legacy)) {
+                recovered = new ConfigMigrationEngine(
+                                ConfigSchemaCatalog.load(),
+                                publicationRecorder)
+                        .migrate(restarted.request(), store);
+            }
+
+            assertEquals(
+                    MigrationTargetState.Outcome.COMPLETE,
+                    recovered.outcome(),
+                    artifact.name());
+            assertEquals(
+                    MigrationEvidence.Durability.STRONG,
+                    recovered.commitProfile(),
+                    artifact.name());
+            assertTrue(
+                    recovered.artifactDurability().values().stream()
+                            .allMatch(value ->
+                                    value == MigrationEvidence.Durability.STRONG),
+                    artifact.name());
+            assertEquals(0, legacyContentOpens.get(), artifact.name());
+            assertFalse(republished.get(), artifact.name());
+            assertRealFileSnapshotUnchanged(
+                    committed, destination, artifact.name());
+            for (Path fixedStage : artifacts.fixedStages()) {
+                assertFalse(Files.exists(fixedStage), artifact.name());
+            }
+        }
+    }
+
+    @Test
+    @EnabledOnOs(OS.LINUX)
+    void realPrecommitStagesForEveryArtifactRemainManualRecoveryEvidence()
+            throws IOException {
+        for (AtomicConfigPublisher.Artifact artifact
+                : AtomicConfigPublisher.Artifact.values()) {
+            Path directory = Files.createDirectory(
+                    temporaryDirectory.resolve(
+                            "precommit-" + artifact.name().toLowerCase()));
+            Path legacy = Files.write(
+                    directory.resolve("iamzombieq-common.toml"),
+                    LegacyConfigParserTest.fixtureBytes());
+            Path target = directory.resolve("iamzombieq-server.toml");
+            MigrationFileSystem.ArtifactPaths artifacts =
+                    MigrationFileSystem.ArtifactPaths.forTarget(target);
+            AtomicBoolean fired = new AtomicBoolean();
+            MigrationFaultInjector precommitFault = point -> {
+                if (point.artifact() == artifact
+                        && point.operation()
+                                == MigrationFaultInjector.Operation.ATOMIC_MOVE
+                        && point.timing()
+                                == MigrationFaultInjector.Timing.BEFORE
+                        && fired.compareAndSet(false, true)) {
+                    throw new IllegalStateException(
+                            "synthetic precommit interruption " + artifact);
+                }
+            };
+
+            RealMigrationRun first = realMigrationRun(
+                    new JdkMigrationFileSystem(), legacy, target, true);
+            try (JdkMigrationFileSystem.StoreSession store =
+                    first.fileSystem().openStore(
+                            first.profile(), first.binding(), legacy)) {
+                MigrationFailure failure = assertThrows(
+                        MigrationFailure.class,
+                        () -> new ConfigMigrationEngine(
+                                        ConfigSchemaCatalog.load(),
+                                        precommitFault)
+                                .migrate(first.request(), store),
+                        artifact.name());
+                assertTrue(failure.synthetic(), artifact.name());
+            }
+            assertTrue(fired.get(), artifact.name());
+            Path stage = committedStage(artifacts, artifact);
+            Path destination = committedDestination(artifacts, artifact);
+            assertTrue(Files.isRegularFile(stage), artifact.name());
+            assertTrue(Files.size(stage) > 0, artifact.name());
+            assertFalse(Files.exists(destination), artifact.name());
+            RealFileSnapshot orphan = realFileSnapshot(stage);
+
+            RealMigrationRun restarted = realMigrationRun(
+                    new JdkMigrationFileSystem(), legacy, target, true);
+            try (JdkMigrationFileSystem.StoreSession store =
+                    restarted.fileSystem().openStore(
+                            restarted.profile(), restarted.binding(), legacy)) {
+                MigrationFailure failure = assertThrows(
+                        MigrationFailure.class,
+                        () -> new ConfigMigrationEngine(
+                                        ConfigSchemaCatalog.load(),
+                                        MigrationFaultInjector.none())
+                                .migrate(restarted.request(), store),
+                        artifact.name());
+                assertFalse(failure.synthetic(), artifact.name());
+                assertEquals(
+                        "orphan-stage-check",
+                        failure.operation(),
+                        artifact.name());
+            }
+            assertRealFileSnapshotUnchanged(
+                    orphan, stage, artifact.name());
+            assertFalse(Files.exists(destination), artifact.name());
+        }
+    }
+
+    @Test
+    @EnabledOnOs(OS.LINUX)
+    void realCompleteEditsRemainReadOnlyAndNeverReseedFromLegacy()
+            throws IOException {
+        for (boolean valid : new boolean[] {true, false}) {
+            Path directory = Files.createDirectory(
+                    temporaryDirectory.resolve(
+                            valid ? "complete-valid" : "complete-invalid"));
+            Path legacy = Files.write(
+                    directory.resolve("iamzombieq-common.toml"),
+                    LegacyConfigParserTest.fixtureBytes());
+            Path target = directory.resolve("iamzombieq-server.toml");
+            MigrationFileSystem.ArtifactPaths artifacts =
+                    MigrationFileSystem.ArtifactPaths.forTarget(target);
+            RealMigrationRun first = realMigrationRun(
+                    new JdkMigrationFileSystem(), legacy, target, true);
+            try (JdkMigrationFileSystem.StoreSession store =
+                    first.fileSystem().openStore(
+                            first.profile(), first.binding(), legacy)) {
+                assertEquals(
+                        MigrationTargetState.Outcome.MIGRATED,
+                        new ConfigMigrationEngine(
+                                        ConfigSchemaCatalog.load(),
+                                        MigrationFaultInjector.none())
+                                .migrate(first.request(), store)
+                                .outcome());
+            }
+
+            List<Path> evidencePaths = List.of(
+                    artifacts.lock(),
+                    artifacts.journal(),
+                    artifacts.backup(),
+                    artifacts.initial(),
+                    artifacts.marker());
+            List<RealFileSnapshot> evidenceBefore = new ArrayList<>();
+            for (Path evidence : evidencePaths) {
+                evidenceBefore.add(realFileSnapshot(evidence));
+            }
+            String canonical = Files.readString(target);
+            String replacement = valid
+                    ? "startingRottenFlesh = 10"
+                    : "startingRottenFlesh = 65";
+            String edited = canonical.replace(
+                    "startingRottenFlesh = 9", replacement);
+            assertFalse(canonical.equals(edited));
+            Files.writeString(target, edited);
+            RealFileSnapshot editedTarget = realFileSnapshot(target);
+            Files.writeString(legacy, "corrupt live legacy after COMPLETE");
+
+            AtomicInteger legacyContentOpens = new AtomicInteger();
+            JdkMigrationFileSystem restartedFileSystem =
+                    new JdkMigrationFileSystem((point, path) -> {
+                        if (path.equals(legacy)) {
+                            legacyContentOpens.incrementAndGet();
+                        }
+                    });
+            RealMigrationRun restarted = realMigrationRun(
+                    restartedFileSystem, legacy, target, true);
+            try (JdkMigrationFileSystem.StoreSession store =
+                    restarted.fileSystem().openStore(
+                            restarted.profile(), restarted.binding(), legacy)) {
+                ConfigMigrationEngine engine = new ConfigMigrationEngine(
+                        ConfigSchemaCatalog.load(),
+                        MigrationFaultInjector.none());
+                if (valid) {
+                    assertEquals(
+                            MigrationTargetState.Outcome.COMPLETE,
+                            engine.migrate(restarted.request(), store).outcome());
+                } else {
+                    MigrationFailure failure = assertThrows(
+                            MigrationFailure.class,
+                            () -> engine.migrate(restarted.request(), store));
+                    assertFalse(failure.synthetic());
+                    assertEquals(
+                            MigrationTargetState.Phase.COMPLETE,
+                            failure.phase());
+                    assertEquals(
+                            "complete-target-validation",
+                            failure.operation());
+                }
+            }
+
+            assertEquals(0, legacyContentOpens.get());
+            assertRealFileSnapshotUnchanged(
+                    editedTarget, target, "COMPLETE edited target");
+            for (int index = 0; index < evidencePaths.size(); index++) {
+                assertRealFileSnapshotUnchanged(
+                        evidenceBefore.get(index),
+                        evidencePaths.get(index),
+                        "COMPLETE evidence " + evidencePaths.get(index));
+            }
+            for (Path stage : artifacts.fixedStages()) {
+                assertFalse(Files.exists(stage));
+            }
+        }
+    }
+
+    @Test
+    void processDeathReleasesPermanentLockAndResumesCommittedTarget()
+            throws Exception {
+        assumeTrue(System.getProperty("os.name").equals("Linux"));
+        for (MigrationProcessDeathPeer.Mode mode
+                : List.of(
+                        MigrationProcessDeathPeer.Mode.LOCK_AFTER_OS_ACQUIRE,
+                        MigrationProcessDeathPeer.Mode.TARGET_AFTER_ATOMIC_MOVE)) {
+            Path directory = Files.createDirectory(
+                    temporaryDirectory.resolve(
+                            "process-" + mode.name().toLowerCase()));
+            Path legacy = Files.write(
+                    directory.resolve("iamzombieq-common.toml"),
+                    LegacyConfigParserTest.fixtureBytes());
+            Path target = directory.resolve("iamzombieq-server.toml");
+            MigrationFileSystem.ArtifactPaths artifacts =
+                    MigrationFileSystem.ArtifactPaths.forTarget(target);
+            Path stdout = temporaryDirectory.resolve(
+                    mode.name().toLowerCase() + ".stdout.log");
+            Path stderr = temporaryDirectory.resolve(
+                    mode.name().toLowerCase() + ".stderr.log");
+            String runtimeClasspath = System.getProperty(
+                    "iamzombieq.test.runtimeClasspath");
+            assertTrue(runtimeClasspath != null
+                    && !runtimeClasspath.isBlank());
+            Path java = Path.of(
+                    System.getProperty("java.home"), "bin", "java");
+            assertTrue(Files.isExecutable(java));
+
+            Process process = new ProcessBuilder(
+                            java.toString(),
+                            "-Xms16m",
+                            "-Xmx128m",
+                            "-cp",
+                            runtimeClasspath,
+                            MigrationProcessDeathPeer.class.getName(),
+                            mode.name(),
+                            directory.toString(),
+                            Long.toString(ProcessHandle.current().pid()))
+                    .redirectOutput(stdout.toFile())
+                    .redirectError(stderr.toFile())
+                    .start();
+            try {
+                assertTrue(
+                        process.waitFor(30, TimeUnit.SECONDS),
+                        () -> "peer timed out: " + mode);
+                assertEquals(
+                        mode.exitCode(),
+                        process.exitValue(),
+                        () -> mode
+                                + " stderr: "
+                                + readIfPresent(stderr));
+            } finally {
+                if (process.isAlive()) {
+                    process.destroyForcibly();
+                    process.waitFor(10, TimeUnit.SECONDS);
+                }
+            }
+
+            if (mode
+                    == MigrationProcessDeathPeer.Mode.LOCK_AFTER_OS_ACQUIRE) {
+                assertTrue(Files.isRegularFile(artifacts.lock()));
+                assertEquals(0, Files.size(artifacts.lock()));
+                String lockFileKey = Files.readAttributes(
+                                artifacts.lock(), BasicFileAttributes.class)
+                        .fileKey()
+                        .toString();
+                RealMigrationRun restarted = realMigrationRun(
+                        new JdkMigrationFileSystem(), legacy, target, true);
+                try (JdkMigrationFileSystem.StoreSession store =
+                        restarted.fileSystem().openStore(
+                                restarted.profile(),
+                                restarted.binding(),
+                                legacy)) {
+                    assertEquals(
+                            MigrationTargetState.Outcome.MIGRATED,
+                            new ConfigMigrationEngine(
+                                            ConfigSchemaCatalog.load(),
+                                            MigrationFaultInjector.none())
+                                    .migrate(restarted.request(), store)
+                                    .outcome());
+                }
+                assertEquals(
+                        lockFileKey,
+                        Files.readAttributes(
+                                        artifacts.lock(),
+                                        BasicFileAttributes.class)
+                                .fileKey()
+                                .toString());
+                assertTrue(Files.size(artifacts.lock()) > 0);
+            } else {
+                assertTrue(Files.isRegularFile(target));
+                assertFalse(Files.exists(committedStage(
+                        artifacts, AtomicConfigPublisher.Artifact.TARGET)));
+                RealFileSnapshot committedTarget = realFileSnapshot(target);
+                Files.writeString(
+                        legacy,
+                        "corrupt live legacy after target process death");
+                AtomicInteger legacyContentOpens = new AtomicInteger();
+                JdkMigrationFileSystem restartedFileSystem =
+                        new JdkMigrationFileSystem((point, path) -> {
+                            if (path.equals(legacy)) {
+                                legacyContentOpens.incrementAndGet();
+                            }
+                        });
+                RealMigrationRun restarted = realMigrationRun(
+                        restartedFileSystem, legacy, target, true);
+                try (JdkMigrationFileSystem.StoreSession store =
+                        restarted.fileSystem().openStore(
+                                restarted.profile(),
+                                restarted.binding(),
+                                legacy)) {
+                    assertEquals(
+                            MigrationTargetState.Outcome.COMPLETE,
+                            new ConfigMigrationEngine(
+                                            ConfigSchemaCatalog.load(),
+                                            MigrationFaultInjector.none())
+                                    .migrate(restarted.request(), store)
+                                    .outcome());
+                }
+                assertEquals(0, legacyContentOpens.get());
+                assertRealFileSnapshotUnchanged(
+                        committedTarget, target, "process-death target");
+            }
+            assertTrue(Files.isRegularFile(target));
+            assertTrue(Files.isRegularFile(artifacts.marker()));
+            for (Path stage : artifacts.fixedStages()) {
+                assertFalse(Files.exists(stage));
+            }
+        }
+    }
+
+    @Test
+    @EnabledOnOs(OS.LINUX)
+    void realPreparedEvidenceCannotCrossActualJavaRuntime()
+            throws Exception {
+        if (!MigrationJavaRuntimeMatrix.runtimeFeatures()
+                .equals(java.util.Set.of(22, 25))) {
+            return;
+        }
+        assertEquals("Linux", System.getProperty("os.name"));
+        int currentFeature = Runtime.version().feature();
+        int evidenceFeature = currentFeature == 22 ? 25 : 22;
+        Path evidenceJava = Path.of(System.getProperty(
+                "iamzombieq.test.javaExecutable." + evidenceFeature));
+        assertTrue(Files.isExecutable(evidenceJava));
+
+        Path directory = Files.createDirectory(
+                temporaryDirectory.resolve(
+                        "cross-runtime-" + evidenceFeature + "-to-"
+                                + currentFeature));
+        Path legacy = Files.write(
+                directory.resolve("iamzombieq-common.toml"),
+                LegacyConfigParserTest.fixtureBytes());
+        Path target = directory.resolve("iamzombieq-server.toml");
+        Path stdout = directory.resolve("producer.stdout.log");
+        Path stderr = directory.resolve("producer.stderr.log");
+        String runtimeClasspath = System.getProperty(
+                "iamzombieq.test.runtimeClasspath");
+        assertTrue(runtimeClasspath != null && !runtimeClasspath.isBlank());
+
+        Process producer = new ProcessBuilder(
+                        evidenceJava.toString(),
+                        "-Xms16m",
+                        "-Xmx128m",
+                        "-cp",
+                        runtimeClasspath,
+                        MigrationProcessDeathPeer.class.getName(),
+                        MigrationProcessDeathPeer.Mode
+                                .PREPARED_AFTER_JOURNAL_MOVE
+                                .name(),
+                        directory.toString(),
+                        Long.toString(ProcessHandle.current().pid()))
+                .redirectOutput(stdout.toFile())
+                .redirectError(stderr.toFile())
+                .start();
+        try {
+            assertTrue(
+                    producer.waitFor(30, TimeUnit.SECONDS),
+                    () -> "cross-runtime producer timed out: "
+                            + readIfPresent(stderr));
+            assertEquals(
+                    MigrationProcessDeathPeer.PREPARED_EXIT,
+                    producer.exitValue(),
+                    () -> "cross-runtime producer failed: "
+                            + readIfPresent(stderr));
+        } finally {
+            if (producer.isAlive()) {
+                producer.destroyForcibly();
+                producer.waitFor(10, TimeUnit.SECONDS);
+            }
+        }
+
+        MigrationFileSystem.ArtifactPaths artifacts =
+                MigrationFileSystem.ArtifactPaths.forTarget(target);
+        assertTrue(Files.isRegularFile(artifacts.lock()));
+        assertTrue(Files.isRegularFile(artifacts.journal()));
+        MigrationJournal journal = MigrationJournal.decode(
+                Files.readAllBytes(artifacts.journal()));
+        assertEquals(
+                MigrationTargetState.Phase.PREPARED, journal.phase());
+        assertEquals(
+                evidenceFeature,
+                journal.evidence().binding().javaFeature());
+
+        List<Path> migrationPaths = new ArrayList<>(List.of(
+                artifacts.lock(),
+                artifacts.journal(),
+                artifacts.backup(),
+                artifacts.initial(),
+                artifacts.target(),
+                artifacts.marker()));
+        migrationPaths.addAll(artifacts.fixedStages());
+        java.util.Map<Path, RealFileSnapshot> snapshots =
+                new java.util.LinkedHashMap<>();
+        for (Path path : migrationPaths) {
+            if (Files.exists(path)) {
+                snapshots.put(path, realFileSnapshot(path));
+            }
+        }
+        Files.writeString(legacy, "corrupt legacy before feature mismatch");
+
+        AtomicInteger legacyContentOpens = new AtomicInteger();
+        AtomicBoolean republished = new AtomicBoolean();
+        JdkMigrationFileSystem currentFileSystem =
+                new JdkMigrationFileSystem((point, path) -> {
+                    if (path.equals(legacy)) {
+                        legacyContentOpens.incrementAndGet();
+                    }
+                });
+        RealMigrationRun restarted = realMigrationRun(
+                currentFileSystem, legacy, target, true);
+        assertEquals(currentFeature, restarted.binding().javaFeature());
+        MigrationFaultInjector publicationRecorder = point -> {
+            if (point.operation()
+                    == MigrationFaultInjector.Operation.ATOMIC_MOVE) {
+                republished.set(true);
+            }
+        };
+        try (JdkMigrationFileSystem.StoreSession store =
+                restarted.fileSystem().openStore(
+                        restarted.profile(), restarted.binding(), legacy)) {
+            MigrationFailure failure = assertThrows(
+                    MigrationFailure.class,
+                    () -> new ConfigMigrationEngine(
+                                    ConfigSchemaCatalog.load(),
+                                    publicationRecorder)
+                            .migrate(restarted.request(), store));
+            assertFalse(failure.synthetic());
+            assertEquals(
+                    MigrationTargetState.Phase.PREPARED,
+                    failure.phase());
+            assertEquals(
+                    "evidence-binding-validation", failure.operation());
+        }
+
+        assertEquals(0, legacyContentOpens.get());
+        assertFalse(republished.get());
+        for (Path path : migrationPaths) {
+            assertEquals(snapshots.containsKey(path), Files.exists(path));
+        }
+        for (var snapshot : snapshots.entrySet()) {
+            assertRealFileSnapshotUnchanged(
+                    snapshot.getValue(),
+                    snapshot.getKey(),
+                    evidenceFeature + "->" + currentFeature);
+        }
+    }
+
+    @Test
+    @EnabledOnOs(OS.LINUX)
     void realRestartRecoversZeroLengthFirstCreationLockOnSameInode()
             throws IOException {
-        JdkMigrationFileSystem fileSystem = new JdkMigrationFileSystem();
+        JdkMigrationFileSystem fileSystem = certifiedFileSystem();
         Path legacy = temporaryDirectory.resolve("iamzombieq-common.toml");
         try (InputStream input = getClass().getResourceAsStream(
                 "/dev/molang/iamzombieq/config/migration/parser/"
@@ -396,6 +1061,7 @@ class JdkMigrationFileSystemTest {
     }
 
     @Test
+    @EnabledOnOs(OS.LINUX)
     void emptyLockFaultRestartsRecoverOnlyPrewriteZeroLengthStates()
             throws IOException {
         java.util.List<EmptyLockFaultCase> cases =
@@ -497,7 +1163,7 @@ class JdkMigrationFileSystemTest {
                     artifacts.lock(), BasicFileAttributes.class);
 
             JdkMigrationFileSystem fileSystem =
-                    new JdkMigrationFileSystem();
+                    certifiedFileSystem();
             MigrationBinding binding = MigrationBinding.capture(
                     fileSystem.observeBinding(target));
             MigrationAccessProfile profile =
@@ -610,6 +1276,7 @@ class JdkMigrationFileSystemTest {
     }
 
     @Test
+    @EnabledOnOs(OS.LINUX)
     void realEmptyLockGateRejectsEveryArtifactAppearingWhileOsLockIsHeld()
             throws IOException {
         byte[] legacyBytes;
@@ -644,7 +1311,7 @@ class JdkMigrationFileSystemTest {
                     artifacts.lock(), BasicFileAttributes.class);
 
             JdkMigrationFileSystem fileSystem =
-                    new JdkMigrationFileSystem();
+                    certifiedFileSystem();
             MigrationBinding binding = MigrationBinding.capture(
                     fileSystem.observeBinding(target));
             MigrationAccessProfile profile =
@@ -715,9 +1382,10 @@ class JdkMigrationFileSystemTest {
     }
 
     @Test
+    @EnabledOnOs(OS.LINUX)
     void realContendedZeroLengthLockFailsNonblockingThenRecoversSameInode()
             throws IOException {
-        JdkMigrationFileSystem fileSystem = new JdkMigrationFileSystem();
+        JdkMigrationFileSystem fileSystem = certifiedFileSystem();
         Path legacy = temporaryDirectory.resolve("iamzombieq-common.toml");
         try (InputStream input = getClass().getResourceAsStream(
                 "/dev/molang/iamzombieq/config/migration/parser/"
@@ -780,9 +1448,10 @@ class JdkMigrationFileSystemTest {
     }
 
     @Test
+    @EnabledOnOs(OS.LINUX)
     void observablePermanentLockPathnameReplacementFailsClosed()
             throws IOException {
-        JdkMigrationFileSystem fileSystem = new JdkMigrationFileSystem();
+        JdkMigrationFileSystem fileSystem = certifiedFileSystem();
         Path legacy = temporaryDirectory.resolve("iamzombieq-common.toml");
         try (InputStream input = getClass().getResourceAsStream(
                 "/dev/molang/iamzombieq/config/migration/parser/"
@@ -857,7 +1526,7 @@ class JdkMigrationFileSystemTest {
     @Test
     void realSecureStoreBindsSeparateLegacyAndWorldTargetParents()
             throws IOException {
-        JdkMigrationFileSystem fileSystem = new JdkMigrationFileSystem();
+        JdkMigrationFileSystem fileSystem = certifiedFileSystem();
         Path globalConfig = Files.createDirectory(
                 temporaryDirectory.resolve("global-config"));
         Path worldServerConfig = Files.createDirectories(
@@ -918,9 +1587,10 @@ class JdkMigrationFileSystemTest {
     }
 
     @Test
+    @EnabledOnOs(OS.LINUX)
     void cooperativeMigratorsContendOnTheSamePermanentInode()
             throws Exception {
-        JdkMigrationFileSystem fileSystem = new JdkMigrationFileSystem();
+        JdkMigrationFileSystem fileSystem = certifiedFileSystem();
         Path legacy = temporaryDirectory.resolve("iamzombieq-common.toml");
         try (InputStream input = getClass().getResourceAsStream(
                 "/dev/molang/iamzombieq/config/migration/parser/"
@@ -1035,9 +1705,10 @@ class JdkMigrationFileSystemTest {
     }
 
     @Test
+    @EnabledOnOs(OS.LINUX)
     void certifiedLinuxBindingCannotOpenLexicalBasicStore()
             throws IOException {
-        JdkMigrationFileSystem fileSystem = new JdkMigrationFileSystem();
+        JdkMigrationFileSystem fileSystem = certifiedFileSystem();
         Path legacy = Files.writeString(
                 temporaryDirectory.resolve("iamzombieq-common.toml"),
                 "legacy");
@@ -1060,9 +1731,10 @@ class JdkMigrationFileSystemTest {
     }
 
     @Test
+    @EnabledOnOs(OS.LINUX)
     void strongLockDirectoryFaultCannotResumeAsBasic()
             throws IOException {
-        JdkMigrationFileSystem fileSystem = new JdkMigrationFileSystem();
+        JdkMigrationFileSystem fileSystem = certifiedFileSystem();
         Path legacy = temporaryDirectory.resolve("iamzombieq-common.toml");
         try (InputStream input = getClass().getResourceAsStream(
                 "/dev/molang/iamzombieq/config/migration/parser/"
@@ -1132,4 +1804,96 @@ class JdkMigrationFileSystemTest {
             int occurrence,
             boolean strong,
             boolean recoverable) {}
+
+    private static RealMigrationRun realMigrationRun(
+            JdkMigrationFileSystem fileSystem,
+            Path legacy,
+            Path target,
+            boolean strong) throws IOException {
+        MigrationBinding binding = MigrationBinding.capture(
+                fileSystem.observeBinding(target));
+        MigrationAccessProfile profile = MigrationAccessProfile.select(
+                fileSystem.capabilities(binding), false);
+        return new RealMigrationRun(
+                fileSystem,
+                binding,
+                profile,
+                new ConfigMigrationEngine.Request(
+                        MigrationTarget.SERVER,
+                        legacy,
+                        target,
+                        binding,
+                        profile,
+                        Optional.empty(),
+                        strong));
+    }
+
+    private static MigrationTargetState.Phase committedFaultPhase(
+            AtomicConfigPublisher.Artifact artifact) {
+        return switch (artifact) {
+            case JOURNAL -> MigrationTargetState.Phase.TARGET_PUBLISHED;
+            case BACKUP -> MigrationTargetState.Phase.PREPARED;
+            case INITIAL -> MigrationTargetState.Phase.BACKUP_PUBLISHED;
+            case TARGET -> MigrationTargetState.Phase.INITIAL_PUBLISHED;
+            case MARKER -> MigrationTargetState.Phase.COMPLETE;
+        };
+    }
+
+    private static Path committedDestination(
+            MigrationFileSystem.ArtifactPaths paths,
+            AtomicConfigPublisher.Artifact artifact) {
+        return switch (artifact) {
+            case JOURNAL -> paths.journal();
+            case BACKUP -> paths.backup();
+            case INITIAL -> paths.initial();
+            case TARGET -> paths.target();
+            case MARKER -> paths.marker();
+        };
+    }
+
+    private static Path committedStage(
+            MigrationFileSystem.ArtifactPaths paths,
+            AtomicConfigPublisher.Artifact artifact) {
+        return paths.fixedStages().get(artifact.ordinal());
+    }
+
+    private static RealFileSnapshot realFileSnapshot(Path path)
+            throws IOException {
+        BasicFileAttributes attributes = Files.readAttributes(
+                path, BasicFileAttributes.class);
+        assertTrue(attributes.isRegularFile());
+        assertTrue(attributes.fileKey() != null);
+        return new RealFileSnapshot(
+                attributes.fileKey().toString(),
+                attributes.size(),
+                attributes.lastModifiedTime(),
+                Files.readAllBytes(path));
+    }
+
+    private static String readIfPresent(Path path) {
+        try {
+            return Files.exists(path) ? Files.readString(path) : "ABSENT";
+        } catch (IOException failure) {
+            return "UNREADABLE: " + failure;
+        }
+    }
+
+    private static void assertRealFileSnapshotUnchanged(
+            RealFileSnapshot expected, Path path, String description)
+            throws IOException {
+        RealFileSnapshot actual = realFileSnapshot(path);
+        assertEquals(expected.fileKey(), actual.fileKey(), description);
+        assertEquals(expected.size(), actual.size(), description);
+        assertEquals(expected.modified(), actual.modified(), description);
+        assertArrayEquals(expected.bytes(), actual.bytes(), description);
+    }
+
+    private record RealMigrationRun(
+            JdkMigrationFileSystem fileSystem,
+            MigrationBinding binding,
+            MigrationAccessProfile profile,
+            ConfigMigrationEngine.Request request) {}
+
+    private record RealFileSnapshot(
+            String fileKey, long size, FileTime modified, byte[] bytes) {}
 }

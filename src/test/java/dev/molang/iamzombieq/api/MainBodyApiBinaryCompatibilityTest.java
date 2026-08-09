@@ -4,15 +4,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.molang.iamzombieq.util.ClassFileAbiReader;
+import dev.molang.iamzombieq.util.ClassFileAbiReader.ClassInfo;
+import dev.molang.iamzombieq.util.ClassFileAbiReader.MemberInfo;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.lang.classfile.AttributedElement;
-import java.lang.classfile.Attributes;
-import java.lang.classfile.ClassFile;
-import java.lang.classfile.ClassModel;
-import java.lang.reflect.AccessFlag;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -32,7 +31,7 @@ import org.junit.jupiter.api.Test;
  * or initializing any production class.
  */
 class MainBodyApiBinaryCompatibilityTest {
-    private static final Path CLASS_ROOT = Path.of("build/classes/java/main");
+    private static final String MAIN_CLASSES_DIR_PROPERTY = "iamzombieq.test.mainClassesDir";
     private static final String FIXTURE =
             "/dev/molang/iamzombieq/api/main-body-public-binary-1.x.tsv";
     private static final Map<String, Integer> EXPECTED_PUBLIC_METHOD_COUNTS = Map.of(
@@ -66,27 +65,40 @@ class MainBodyApiBinaryCompatibilityTest {
     private static List<AbiEntry> readCompiledClasses() throws IOException {
         List<AbiEntry> entries = new ArrayList<>();
         for (String expectedOwner : EXPECTED_PUBLIC_METHOD_COUNTS.keySet()) {
-            Path classFile = CLASS_ROOT.resolve(expectedOwner + ".class");
+            Path classFile = compiledClassRoot().resolve(expectedOwner + ".class");
             assertTrue(Files.isRegularFile(classFile), "compiled API class must exist at " + classFile);
 
-            // ClassFile.parse reads class-file bytes only. It neither defines the class nor runs <clinit>.
-            ClassModel model = ClassFile.of().parse(classFile);
-            String owner = model.thisClass().asInternalName();
+            // The reader consumes class-file bytes only. It neither defines the class nor runs <clinit>.
+            ClassInfo model = ClassFileAbiReader.read(classFile);
+            //? if >=1.21.11 {
+            assertEquals(
+                    dev.molang.iamzombieq.util.JdkClassFileAbiOracle.read(classFile),
+                    model,
+                    "Java 21-safe reader must match the independent JDK class-file oracle for " + expectedOwner);
+            //?}
+            String owner = model.internalName();
             assertEquals(expectedOwner, owner, "class-file owner must match its stable JVM name");
-            entries.add(new AbiEntry("CLASS", owner, "-", access(model.flags().flagsMask()), "-", signature(model)));
+            entries.add(new AbiEntry(
+                    "CLASS", owner, "-", access(model.accessFlags()), "-", model.signature().orElse("-")));
 
             model.methods().stream()
-                    .filter(method -> method.flags().has(AccessFlag.PUBLIC))
+                    .filter(MemberInfo::isPublic)
                     .map(method -> new AbiEntry(
                             "METHOD",
                             owner,
-                            method.methodName().stringValue(),
-                            access(method.flags().flagsMask()),
-                            method.methodType().stringValue(),
-                            signature(method)))
+                            method.name(),
+                            access(method.accessFlags()),
+                            method.descriptor(),
+                            method.signature().orElse("-")))
                     .forEach(entries::add);
         }
         return entries;
+    }
+
+    private static Path compiledClassRoot() {
+        String configured = System.getProperty(MAIN_CLASSES_DIR_PROPERTY);
+        assertNotNull(configured, "Gradle must inject the active node's compiled main class directory");
+        return Path.of(configured);
     }
 
     private static List<AbiEntry> readFixture() throws IOException {
@@ -141,12 +153,6 @@ class MainBodyApiBinaryCompatibilityTest {
 
     private static String access(int flags) {
         return String.format(Locale.ROOT, "0x%04x", flags);
-    }
-
-    private static String signature(AttributedElement element) {
-        return element.findAttribute(Attributes.signature())
-                .map(attribute -> attribute.signature().stringValue())
-                .orElse("-");
     }
 
     private record AbiEntry(

@@ -3,8 +3,16 @@ package dev.molang.iamzombieq;
 import dev.molang.iamzombieq.block.CoffinBlock;
 import dev.molang.iamzombieq.block.HerobrineHeadBlock;
 import dev.molang.iamzombieq.block.HerobrineWallHeadBlock;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+//? if >=26.2
 import net.minecraft.world.level.block.entity.BlockEntityTypes;
+//? if <26.2
+//import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.event.BlockEntityTypeAddBlocksEvent;
@@ -16,7 +24,7 @@ public final class IAmZombieBlocks {
 
     // A single wood-agnostic coffin block; any wood crafts it (see recipes) and it always renders the
     // bespoke coffin textures (the CoffinBlock model derives from the shared template_coffin*).
-    public static final DeferredBlock<CoffinBlock> COFFIN = BLOCKS.registerBlock(
+    public static final DeferredBlock<CoffinBlock> COFFIN = registerBlock(
             "coffin",
             CoffinBlock::new,
             () -> BlockBehaviour.Properties.ofFullCopy(Blocks.OAK_PLANKS).noOcclusion()
@@ -25,19 +33,31 @@ public final class IAmZombieBlocks {
     // The Herobrine head as a proper vanilla-style skull: a placeable floor + wall block pair sharing the
     // vanilla SkullBlockEntity/renderer. Properties copied from the skeleton skull so it behaves exactly like a
     // vanilla head (strength, sound, push reaction, no occlusion).
-    public static final DeferredBlock<HerobrineHeadBlock> HEROBRINE_HEAD = BLOCKS.registerBlock(
+    public static final DeferredBlock<HerobrineHeadBlock> HEROBRINE_HEAD = registerBlock(
             "herobrine_head",
             HerobrineHeadBlock::new,
             () -> BlockBehaviour.Properties.ofFullCopy(Blocks.SKELETON_SKULL)
     );
 
-    public static final DeferredBlock<HerobrineWallHeadBlock> HEROBRINE_WALL_HEAD = BLOCKS.registerBlock(
+    public static final DeferredBlock<HerobrineWallHeadBlock> HEROBRINE_WALL_HEAD = registerBlock(
             "herobrine_wall_head",
             HerobrineWallHeadBlock::new,
             () -> BlockBehaviour.Properties.ofFullCopy(Blocks.SKELETON_WALL_SKULL)
     );
 
     private IAmZombieBlocks() {
+    }
+
+    private static <B extends Block> DeferredBlock<B> registerBlock(
+            String name,
+            Function<BlockBehaviour.Properties, ? extends B> factory,
+            Supplier<BlockBehaviour.Properties> properties) {
+        //? if >=1.21.10 {
+        return BLOCKS.registerBlock(name, factory, properties);
+        //?} else {
+        /*return BLOCKS.register(name,
+                key -> factory.apply(properties.get().setId(ResourceKey.create(Registries.BLOCK, key))));
+        *///?}
     }
 
     public static void register(IEventBus modEventBus) {

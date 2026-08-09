@@ -125,6 +125,41 @@ class SpiderVehicleMovementContextTest {
     }
 
     @Test
+    void pre262NativeInputsKeepLowFrictionCubicAndNeutralHorizontalBounce() {
+        SpiderVehicleHorizontalEnvelope.MotionBound modern =
+                resolve(lowFrictionInputs(false));
+        SpiderVehicleHorizontalEnvelope.MotionBound legacy =
+                resolve(lowFrictionInputs(true));
+
+        float friction = 0.4F;
+        float legacyGroundAcceleration =
+                0.3F
+                        * ((float)
+                                        SpiderVehicleMovementContext
+                                                .VANILLA_GROUND_ACCELERATION_NUMERATOR
+                                / (friction * friction * friction));
+        assertEquals(
+                upperDriven(0.3F),
+                modern.maxAccelerationPerQuantum(),
+                "26.2 keeps its <=0.6 configured-speed branch");
+        assertEquals(
+                upperDriven(legacyGroundAcceleration),
+                legacy.maxAccelerationPerQuantum(),
+                "pre-26.2 always uses the native cubic ground-speed formula");
+        assertTrue(
+                legacy.maxAccelerationPerQuantum()
+                        > modern.maxAccelerationPerQuantum());
+        assertEquals(
+                Math.nextUp(
+                        (double)
+                                (float)
+                                        SpiderVehicleMovementContext
+                                                .VANILLA_GROUND_DRAG_FACTOR),
+                legacy.maxRetention(),
+                "neutral legacy drag and zero horizontal restitution add no invented retention");
+    }
+
+    @Test
     void invalidDynamicContextIsRejectedInsteadOfInventingFallbackCoefficients() {
         assertTrue(
                 SpiderVehicleMovementContext.fromInputs(
@@ -291,7 +326,31 @@ class SpiderVehicleMovementContextTest {
                 pushedByFluid,
                 water,
                 lava,
+                false,
                 fastLava);
+    }
+
+    private static SpiderVehicleMovementContext.FormulaInputs lowFrictionInputs(
+            boolean pre262NativeMotion) {
+        return new SpiderVehicleMovementContext.FormulaInputs(
+                0.3F,
+                0.4F,
+                0.4F,
+                1.0F,
+                0.0F,
+                0.0F,
+                1.0F,
+                1.0F,
+                0.0,
+                0.0,
+                1.0F,
+                false,
+                false,
+                false,
+                false,
+                false,
+                pre262NativeMotion,
+                false);
     }
 
     private static void assertFloatRecurrenceIsCovered(
@@ -435,6 +494,7 @@ class SpiderVehicleMovementContextTest {
                 true,
                 false,
                 false,
+                false,
                 false);
     }
 
@@ -469,6 +529,7 @@ class SpiderVehicleMovementContextTest {
                 true,
                 false,
                 false,
+                false,
                 false);
     }
 
@@ -485,5 +546,13 @@ class SpiderVehicleMovementContextTest {
             return left;
         }
         return Math.nextUp(left + right);
+    }
+
+    private static double upperDriven(float sourceAcceleration) {
+        double source = Math.nextUp((double) sourceAcceleration);
+        return Math.nextUp(
+                source
+                        * SpiderVehicleMovementContext
+                                .VANILLA_YAW_ROTATION_NORM_BOUND);
     }
 }

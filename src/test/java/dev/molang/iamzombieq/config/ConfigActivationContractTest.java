@@ -29,6 +29,8 @@ class ConfigActivationContractTest {
             MAIN.resolve("dev/molang/iamzombieq/IAmZombieConfig.java");
     private static final Path APPEARANCE =
             MAIN.resolve("dev/molang/iamzombieq/IAmZombieClientConfig.java");
+    private static final Path GAMETEST =
+            MAIN.resolve("dev/molang/iamzombieq/gametest");
     private static final Pattern REGISTRATION = Pattern.compile(
             "modContainer\\s*\\.\\s*registerConfig\\s*\\([^;]+\\);");
 
@@ -90,8 +92,7 @@ class ConfigActivationContractTest {
             for (Path path : paths.filter(Files::isRegularFile)
                     .filter(candidate -> candidate.toString().endsWith(".java"))
                     .filter(candidate -> !candidate.equals(FACADE))
-                    .filter(candidate -> !candidate.toString()
-                            .contains("/gametest/"))
+                    .filter(candidate -> !candidate.startsWith(GAMETEST))
                     .toList()) {
                 String source = Files.readString(path);
                 assertFalse(

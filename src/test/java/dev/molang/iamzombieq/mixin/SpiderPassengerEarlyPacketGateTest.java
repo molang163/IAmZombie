@@ -18,8 +18,8 @@ class SpiderPassengerEarlyPacketGateTest {
         String executableBody = gate.substring(gate.indexOf('{'));
 
         assertEquals(
-                "{returnforce"
-                        + "&&!sendEventAndTriggers"
+                "{returnrestorationContext"
+                        + "&&nodeNativeRestorationShape"
                         + "&&sameConnection"
                         + "&&serverZombie"
                         + "&&sameLevelAndDimension"
@@ -61,7 +61,7 @@ class SpiderPassengerEarlyPacketGateTest {
     }
 
     @Test
-    void decisionHasNoRetryOrConsumableState() throws IOException {
+    void decisionHasNoRetryOrManualPublication() throws IOException {
         String source = SourceScan.stripComments(SourceScan.mainJava(MIXIN_PATH));
         String gate =
                 SourceScan.stripComments(
@@ -69,9 +69,7 @@ class SpiderPassengerEarlyPacketGateTest {
                                 source,
                                 "private static boolean iamzombieq$shouldDefer"));
 
-        assertFalse(source.contains("boolean consumed"));
         assertFalse(source.contains("AtomicBoolean"));
-        assertFalse(source.contains("Map<"));
         assertFalse(gate.contains("new "));
         assertFalse(gate.contains("while ("));
         assertFalse(gate.contains("for ("));

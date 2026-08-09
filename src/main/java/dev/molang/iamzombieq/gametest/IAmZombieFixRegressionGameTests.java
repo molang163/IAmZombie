@@ -23,8 +23,11 @@ public final class IAmZombieFixRegressionGameTests {
             RegisterGameTestsEvent event,
             Holder<TestEnvironmentDefinition<?>> defaultEnv,
             Holder<TestEnvironmentDefinition<?>> hardEnv) {
+        // CROSS_VERSION-NAUTILUS-CAPABILITY:gametest-saddle-registration
+        //? if >=1.21.11 {
         register(event, "reg_nautilus_saddle_not_fabricated", hardEnv,
                 IAmZombieFixRegressionGameTestBodies::nautilusSaddleNotFabricated);
+        //?}
         register(event, "reg_piglin_conversion_not_baby_and_armed", hardEnv,
                 IAmZombieFixRegressionGameTestBodies::piglinConversionNotBabyAndArmed);
         register(event, "reg_cake_candle_place_not_punished", hardEnv,
@@ -41,8 +44,11 @@ public final class IAmZombieFixRegressionGameTests {
         // is stomped in the same tick, proving the aura fired, so the owned-unchanged assertion can't pass vacuously).
         register(event, "reg_giant_aura_spares_owned_horse_stomps_wild", hardEnv,
                 IAmZombieFixRegressionGameTestBodies::giantAuraSparesOwnedHorseStompsWild);
+        // CROSS_VERSION-NAUTILUS-CAPABILITY:gametest-stomp-registration
+        //? if >=1.21.11 {
         register(event, "reg_giant_aura_spares_owned_nautilus_stomps_wild", hardEnv,
                 IAmZombieFixRegressionGameTestBodies::giantAuraSparesOwnedNautilusStompsWild);
+        //?}
         // #1: the passive walk-destruction sweep clamps its delta so a stale GIANT_LAST_POS (teleport) can't raze a
         // far-away block. Extra padding so the in-test teleport does not enter a neighbouring test's region.
         registerPadded(event, "reg_giant_sweep_clamp_bounds_teleport", hardEnv, 48,
@@ -59,8 +65,13 @@ public final class IAmZombieFixRegressionGameTests {
     private static void registerPadded(RegisterGameTestsEvent event, String name,
             Holder<TestEnvironmentDefinition<?>> environment, int padding, Consumer<GameTestHelper> body) {
         TestData<Holder<TestEnvironmentDefinition<?>>> info = new TestData<>(
-                environment, modId(STRUCTURE), 200, 0, true, Rotation.NONE, false, 1, 1, false, padding);
+                environment, modId(STRUCTURE), 200, 0, true, Rotation.NONE, false, 1, 1, false
+                //? if >=26.1
+                , padding
+                );
         Identifier id = modId(name);
+        //? if <26.1
+        //LegacyGameTestPadding.register(id, padding);
         event.registerTest(id, new ConsumerGameTestInstance(id, info, body));
     }
 

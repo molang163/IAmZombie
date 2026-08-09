@@ -8,20 +8,25 @@ import dev.molang.iamzombieq.util.ZombiePlayerGates;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
+//? if >=26.1
 import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
+//? if >=26.1
 import net.minecraft.core.Holder;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+//? if >=26.1
 import net.minecraft.world.clock.ClockTimeMarkers;
+//? if >=26.1
 import net.minecraft.world.clock.WorldClock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.gamerules.GameRules;
 import net.neoforged.bus.api.SubscribeEvent;
+//? if >=26.1
 import net.neoforged.neoforge.common.util.ClockAdjustment;
 import net.neoforged.neoforge.event.EventHooks;
 import net.neoforged.neoforge.event.entity.player.CanContinueSleepingEvent;
@@ -47,6 +52,8 @@ public final class CoffinNapManager {
     // resting zombie forever.
     private static final long MAX_WAIT_TICKS = 200L;
     private static final long DEEP_SLEEP_TICKS = 100L;
+    //? if <26.1
+    //private static final long LEGACY_NIGHT_TICK = 13000L;
 
     private CoffinNapManager() {
     }
@@ -153,7 +160,10 @@ public final class CoffinNapManager {
             }
             if (ZombieSleepRules.shouldSendCoffinVoteProgress(level.getGameTime(), nap.startTick)) {
                 int needed = ZombieSleepRules.coffinSleepersNeeded(eligible, percentage);
-                player.sendOverlayMessage(Component.translatable(ZombieSleepRules.coffinVoteProgressMessageKey(), deep, needed));
+                player.sendSystemMessage(
+                        Component.translatable(
+                                ZombieSleepRules.coffinVoteProgressMessageKey(), deep, needed),
+                        true);
             }
             return;
         }
@@ -162,7 +172,12 @@ public final class CoffinNapManager {
         // the whole dimension's naps at once ensures the clock is only advanced a single time per vote.
         boolean skipped = advanceToNight(level);
         wakeAllInLevel(level, skipped);
-        ZombieLog.debug(() -> "state.coffin_vote dimension=" + level.dimension().identifier()
+        ZombieLog.debug(() -> "state.coffin_vote dimension="
+                //? if >=1.21.11 {
+                + level.dimension().identifier()
+                //?} else {
+                /*+ level.dimension().location()
+                *///?}
                 + " deep=" + deep + " eligible=" + eligible + " skipped=" + skipped);
     }
 
@@ -192,7 +207,8 @@ public final class CoffinNapManager {
             player.stopSleeping();
         }
         NAPS.remove(player.getUUID());
-        player.sendOverlayMessage(Component.translatable(ZombieSleepRules.napWakeMessageKey(reason)));
+        player.sendSystemMessage(
+                Component.translatable(ZombieSleepRules.napWakeMessageKey(reason)), true);
     }
 
     private static void wakeAllInLevel(ServerLevel level, boolean skipped) {
@@ -210,16 +226,19 @@ public final class CoffinNapManager {
                 p.stopSleeping();
             }
             NAPS.remove(id);
-            p.sendOverlayMessage(Component.translatable(ZombieSleepRules.napWakeMessageKey(reason)));
+            p.sendSystemMessage(
+                    Component.translatable(ZombieSleepRules.napWakeMessageKey(reason)), true);
             level.playSound(null, p.blockPosition(), SoundEvents.WOOL_PLACE, SoundSource.BLOCKS, 0.8F, 0.6F);
         }
     }
 
     /**
      * Advance this dimension's clock to NIGHT. Returns false (and changes nothing) when there is no day-night clock,
-     * {@code advance_time} is off, or another mod cancels the {@link EventHooks#onSleepFinished} event.
+     * {@code advance_time} is off, or (on 26.x) another mod cancels the
+     * {@link EventHooks#onSleepFinished} adjustment. Legacy hooks may adjust the target tick.
      */
     private static boolean advanceToNight(ServerLevel level) {
+        //? if >=26.1 {
         Optional<Holder<WorldClock>> defaultClock = level.dimensionType().defaultClock();
         if (defaultClock.isEmpty() || !level.getGameRules().get(GameRules.ADVANCE_TIME)) {
             return false;
@@ -233,7 +252,28 @@ public final class CoffinNapManager {
             level.resetWeatherCycle();
         }
         return true;
+        //?} else {
+        /*if (level.dimensionType().hasFixedTime()
+                || !level.getGameRules().get(GameRules.ADVANCE_TIME)) {
+            return false;
+        }
+        long current = level.getDayTime();
+        long target = nextLegacyNight(current);
+        long adjusted = EventHooks.onSleepFinished(level, target, current);
+        level.setDayTime(adjusted);
+        if (level.getGameRules().get(GameRules.ADVANCE_WEATHER) && level.isRaining()) {
+            level.resetWeatherCycle();
+        }
+        return true;
+        *///?}
     }
+
+    //? if <26.1 {
+    /*private static long nextLegacyNight(long current) {
+        long target = current - Math.floorMod(current, 24000L) + LEGACY_NIGHT_TICK;
+        return target <= current ? target + 24000L : target;
+    }
+    *///?}
 
     @SubscribeEvent
     public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {

@@ -60,7 +60,11 @@ abstract class ClientConfigurationPacketListenerMixin {
                             + "ensureRunningOnSameThread("
                             + "Lnet/minecraft/network/protocol/Packet;"
                             + "Lnet/minecraft/network/PacketListener;"
+                    //? if >=1.21.10 {
                             + "Lnet/minecraft/network/PacketProcessor;)V",
+                    //?} else {
+                            /*+ "Lnet/minecraft/util/thread/BlockableEventLoop;)V",
+                    *///?}
                     shift = At.Shift.AFTER),
             cancellable = true,
             require = 1)

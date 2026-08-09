@@ -201,7 +201,12 @@ public final class ZombieMobTargetingEvents {
                     mob.setLastHurtByMob(null);
                     if (mob instanceof NeutralMob neutral) {
                         neutral.setPersistentAngerTarget(null);
+                        // CROSS_VERSION-PERSISTENT-ANGER-TIMER-API
+                        //? if <1.21.11 {
+                        /*neutral.setRemainingPersistentAngerTime(0);
+                        *///?} else {
                         neutral.setPersistentAngerEndTime(NeutralMob.NO_ANGER_END_TIME);
+                        //?}
                     }
                 }
                 event.setNewAboutToBeSetTarget(null);

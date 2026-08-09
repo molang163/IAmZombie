@@ -15,9 +15,12 @@ import org.junit.jupiter.api.Test;
 class MigrationFileSystemTest {
     @Test
     void fixedArtifactsAreDerivedWithinEachActualTargetParent() {
-        Path world = Path.of("/world-a/serverconfig/iamzombieq-server.toml");
-        Path global = Path.of("/config/iamzombieq-server.toml");
-        Path preferences = Path.of("/config/iamzombieq-preferences-client.toml");
+        Path world = MigrationBindingTest.absolutePath(
+                "world-a", "serverconfig", "iamzombieq-server.toml");
+        Path global = MigrationBindingTest.absolutePath(
+                "config", "iamzombieq-server.toml");
+        Path preferences = MigrationBindingTest.absolutePath(
+                "config", "iamzombieq-preferences-client.toml");
         MigrationFileSystem.ArtifactPaths worldPaths =
                 MigrationFileSystem.ArtifactPaths.forTarget(world);
         MigrationFileSystem.ArtifactPaths globalPaths =

@@ -60,7 +60,8 @@ enum MigrationAccessProfile {
 
         private boolean isCertifiedSecureTuple() {
             return operatingSystem.equals("Linux")
-                    && javaFeature == 25
+                    && MigrationJavaRuntimeMatrix
+                            .supportsSecureProfile(javaFeature)
                     && providerClass.equals(
                             "sun.nio.fs.LinuxFileSystemProvider")
                     && commonCapabilities()
@@ -69,7 +70,8 @@ enum MigrationAccessProfile {
 
         private boolean isCertifiedWindowsBasicTuple() {
             return operatingSystem.startsWith("Windows")
-                    && javaFeature == 25
+                    && MigrationJavaRuntimeMatrix
+                            .supportsBasicProfile(javaFeature)
                     && providerClass.equals(
                             "sun.nio.fs.WindowsFileSystemProvider")
                     && commonCapabilities()

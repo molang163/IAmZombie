@@ -51,9 +51,13 @@ public final class IAmZombieDisguiseGameTests {
                 false,        // manualOnly
                 1,            // maxAttempts
                 1,            // requiredSuccesses
-                false,        // skyAccess
-                padding);
+                false         // skyAccess
+                //? if >=26.1
+                , padding
+                );
         Identifier id = modId(name);
+        //? if <26.1
+        //LegacyGameTestPadding.register(id, padding);
         event.registerTest(id, new ConsumerGameTestInstance(id, info, body));
     }
 

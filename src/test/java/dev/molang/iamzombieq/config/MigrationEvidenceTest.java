@@ -13,7 +13,8 @@ class MigrationEvidenceTest {
     void evidenceBindsEveryRequiredTargetParentProfileLockHashAndDurabilityField() {
         MigrationEvidence evidence = sample(
                 MigrationTarget.SERVER,
-                Path.of("/config/iamzombieq-server.toml"));
+                MigrationBindingTest.absolutePath(
+                        "config", "iamzombieq-server.toml"));
 
         assertEquals("1.1.0", evidence.schemaVersion());
         assertEquals(MigrationAccessProfile.SECURE, evidence.profile());
@@ -31,13 +32,16 @@ class MigrationEvidenceTest {
     void serverPreferencesAndWorldEvidenceRemainIndependent() {
         MigrationEvidence global = sample(
                 MigrationTarget.SERVER,
-                Path.of("/config/iamzombieq-server.toml"));
+                MigrationBindingTest.absolutePath(
+                        "config", "iamzombieq-server.toml"));
         MigrationEvidence world = sample(
                 MigrationTarget.SERVER,
-                Path.of("/world-a/serverconfig/iamzombieq-server.toml"));
+                MigrationBindingTest.absolutePath(
+                        "world-a", "serverconfig", "iamzombieq-server.toml"));
         MigrationEvidence preferences = sample(
                 MigrationTarget.PREFERENCES,
-                Path.of("/config/iamzombieq-preferences-client.toml"));
+                MigrationBindingTest.absolutePath(
+                        "config", "iamzombieq-preferences-client.toml"));
 
         assertNotEquals(global.target(), world.target());
         assertNotEquals(global.target(), preferences.target());
@@ -58,8 +62,9 @@ class MigrationEvidenceTest {
                 MigrationBindingTest.observation("dir-1", "store-1")
                         .withTarget(target)
                         .withLogicalParent(target.getParent())
-                        .withPhysicalParent(Path.of("/physical")
-                                .resolve(target.getParent().getFileName().toString()));
+                        .withPhysicalParent(MigrationBindingTest.absolutePath(
+                                "physical",
+                                target.getParent().getFileName().toString()));
         MigrationBinding binding = MigrationBinding.capture(observation);
         return MigrationEvidence.builder(targetKind)
                 .target(target)

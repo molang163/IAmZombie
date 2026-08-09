@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.molang.iamzombieq.util.SourceScan;
+import dev.molang.iamzombieq.util.StonecutterCapabilityMatrix;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -11,8 +12,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Source-scan pinning (no Minecraft bootstrap) of the Phase-1 API infection-event wiring in
- * {@link ZombieInfectionEvents}. All four infection paths (villager, pig/piglin, horse,
- * nautilus) delegate to ONE shared pipeline shell, which must fire a cancellable {@code ZombieInfectPreEvent}
+ * {@link ZombieInfectionEvents}. Every platform-available infection path delegates to one
+ * shared pipeline shell, which must fire a cancellable {@code ZombieInfectPreEvent}
  * AFTER the existing gates (RNG chance + {@code EventHooks.canLivingConvert}) but BEFORE the conversion, and a
  * {@code ZombieInfectedEvent} observer AFTER each successful conversion — with the advancement awarded first,
  * then the observer, then the death-event cancel (the original villager-path order). The Pre fire must
@@ -51,16 +52,18 @@ class ZombieInfectionEventsSourceTest {
     }
 
     /**
-     * The four paths must not re-implement the shell — each contributes exactly its victim, result type,
+     * The available paths must not re-implement the shell — each contributes exactly its victim, result type,
      * unchanged conversion method, and (nullable) advancement to the ONE shared pipeline, so the Pre/Infected
      * API events and the gate ordering hold for every path, including horse and nautilus conversions.
      */
     @Test
     void allFourInfectionPathsDelegateToTheSharedPipeline() throws IOException {
-        String src = Files.readString(SOURCE);
+        String src = SourceScan.stripComments(Files.readString(SOURCE));
+        String entityType = StonecutterCapabilityMatrix.activeEntityTypeHolder();
 
         String villager = villagerPath(src);
-        assertTrue(villager.contains("runInfectionPipeline(event, level, villager, player, EntityTypes.ZOMBIE_VILLAGER,"),
+        assertTrue(villager.contains("runInfectionPipeline(event, level, villager, player, "
+                        + entityType + ".ZOMBIE_VILLAGER,"),
                 "the villager path should delegate to the shared pipeline with the ZOMBIE_VILLAGER result type");
         assertTrue(villager.contains("convertVillagerToZombieVillager(level, villager, player)"),
                 "the villager path should pass its existing conversion method unchanged");
@@ -68,7 +71,8 @@ class ZombieInfectionEventsSourceTest {
                 "the villager path should award the INFECTION advancement");
 
         String piglin = piglinPath(src);
-        assertTrue(piglin.contains("runInfectionPipeline(event, level, victim, player, EntityTypes.ZOMBIFIED_PIGLIN,"),
+        assertTrue(piglin.contains("runInfectionPipeline(event, level, victim, player, "
+                        + entityType + ".ZOMBIFIED_PIGLIN,"),
                 "the pig/piglin path should delegate to the shared pipeline with the ZOMBIFIED_PIGLIN result type");
         assertTrue(piglin.contains("convertToZombifiedPiglin(level, victim, player)"),
                 "the pig/piglin path should pass its existing conversion method unchanged");
@@ -76,22 +80,31 @@ class ZombieInfectionEventsSourceTest {
                 "the pig/piglin path should award the INFECTION advancement");
 
         String horse = horsePath(src);
-        assertTrue(horse.contains("runInfectionPipeline(event, level, horse, player, EntityTypes.ZOMBIE_HORSE,"),
+        assertTrue(horse.contains("runInfectionPipeline(event, level, horse, player, "
+                        + entityType + ".ZOMBIE_HORSE,"),
                 "the horse path should delegate to the shared pipeline with the ZOMBIE_HORSE result type");
         assertTrue(horse.contains("convertHorseToZombieHorse(level, horse, player, pendingHorseHealthRatio)"),
                 "the horse path should pass its existing conversion method (with the pending health ratio) unchanged");
         assertTrue(horse.contains("IAmZombieAdvancements.HORSE_INFECTION"),
                 "the horse path should award the HORSE_INFECTION advancement");
 
-        String nautilus = nautilusPath(src);
-        assertTrue(nautilus.contains("runInfectionPipeline(event, level, nautilus, player, EntityTypes.ZOMBIE_NAUTILUS,"),
-                "the nautilus path should delegate to the shared pipeline with the ZOMBIE_NAUTILUS result type");
-        assertTrue(nautilus.contains("convertNautilusToZombieNautilus(level, nautilus, player)"),
-                "the nautilus path should pass its existing conversion method unchanged");
-        assertTrue(nautilus.contains("null);"),
-                "the nautilus path has no advancement, so it should pass null to the pipeline");
-        assertFalse(nautilus.contains("IAmZombieAdvancements"),
-                "the nautilus path must not award any advancement (none exists for it)");
+        if (StonecutterCapabilityMatrix.hasNautilusEntityApi()) {
+            String nautilus = nautilusPath(src);
+            assertTrue(nautilus.contains(
+                            "runInfectionPipeline(event, level, nautilus, player, "
+                                    + entityType + ".ZOMBIE_NAUTILUS,"),
+                    "the nautilus path should delegate to the shared pipeline with the ZOMBIE_NAUTILUS result type");
+            assertTrue(nautilus.contains("convertNautilusToZombieNautilus(level, nautilus, player)"),
+                    "the nautilus path should pass its existing conversion method unchanged");
+            assertTrue(nautilus.contains("null);"),
+                    "the nautilus path has no advancement, so it should pass null to the pipeline");
+            assertFalse(nautilus.contains("IAmZombieAdvancements"),
+                    "the nautilus path must not award any advancement (none exists for it)");
+        } else {
+            assertFalse(src.contains("tryInfectNautilus"));
+            assertFalse(src.contains("convertNautilusToZombieNautilus"));
+            assertFalse(src.contains("ZombieNautilus"));
+        }
     }
 
     @Test

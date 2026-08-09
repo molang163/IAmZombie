@@ -53,7 +53,11 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
+//? if >=1.21.11 {
 import org.jspecify.annotations.Nullable;
+//?} else {
+/*import org.jetbrains.annotations.Nullable;
+*///?}
 
 public class CoffinBlock extends HorizontalDirectionalBlock {
     public static final MapCodec<CoffinBlock> CODEC = simpleCodec(CoffinBlock::new);
@@ -99,11 +103,13 @@ public class CoffinBlock extends HorizontalDirectionalBlock {
         SleepAction action = ZombieSleepRules.useCoffin(isZombiePlayer(serverPlayer), hasHostileNearby(serverLevel, serverPlayer, headPos), canRestToNight(serverLevel));
         return switch (action) {
             case DENY_NOT_ZOMBIE -> {
-                serverPlayer.sendOverlayMessage(Component.translatable(ZombieSleepRules.coffinMessageKey(action, false)));
+                serverPlayer.sendSystemMessage(
+                        Component.translatable(ZombieSleepRules.coffinMessageKey(action, false)), true);
                 yield InteractionResult.SUCCESS_SERVER;
             }
             case DENY_HOSTILE_NEARBY -> {
-                serverPlayer.sendOverlayMessage(Component.translatable(ZombieSleepRules.coffinMessageKey(action, false)));
+                serverPlayer.sendSystemMessage(
+                        Component.translatable(ZombieSleepRules.coffinMessageKey(action, false)), true);
                 yield InteractionResult.SUCCESS_SERVER;
             }
             case REST_UNTIL_NIGHT -> {
@@ -116,7 +122,8 @@ public class CoffinBlock extends HorizontalDirectionalBlock {
                     // Mounted / already sleeping / cannot lie down: fall back to just setting the respawn point.
                     setCoffinRespawn(serverLevel, serverPlayer, headPos);
                 }
-                serverPlayer.sendOverlayMessage(Component.translatable(ZombieSleepRules.coffinMessageKey(action, napBegan)));
+                serverPlayer.sendSystemMessage(
+                        Component.translatable(ZombieSleepRules.coffinMessageKey(action, napBegan)), true);
                 yield InteractionResult.SUCCESS_SERVER;
             }
             case SET_RESPAWN -> {
@@ -126,7 +133,8 @@ public class CoffinBlock extends HorizontalDirectionalBlock {
                 IAmZombieAdvancements.award(serverPlayer, IAmZombieAdvancements.COFFIN);
                 setCoffinRespawn(serverLevel, serverPlayer, headPos);
                 serverLevel.playSound(null, headPos, SoundEvents.RESPAWN_ANCHOR_SET_SPAWN, SoundSource.BLOCKS, 1.0F, 1.0F);
-                serverPlayer.sendOverlayMessage(Component.translatable(ZombieSleepRules.coffinMessageKey(action, false)));
+                serverPlayer.sendSystemMessage(
+                        Component.translatable(ZombieSleepRules.coffinMessageKey(action, false)), true);
                 yield InteractionResult.SUCCESS_SERVER;
             }
             case PASS_THROUGH, BED_EXPLODES -> InteractionResult.PASS;
@@ -142,7 +150,11 @@ public class CoffinBlock extends HorizontalDirectionalBlock {
     public Optional<ServerPlayer.RespawnPosAngle> getRespawnPosition(BlockState state, EntityType<?> type, LevelReader levelReader, BlockPos pos, float orientation) {
         Direction facing = state.getValue(FACING);
         return findCoffinStandUpPosition(type, levelReader, pos, facing, orientation)
+                //? if >=1.21.10 {
                 .map(standUpPos -> ServerPlayer.RespawnPosAngle.of(standUpPos, pos, 0.0F));
+                //?} else {
+                /*.map(standUpPos -> ServerPlayer.RespawnPosAngle.of(standUpPos, pos));
+                *///?}
     }
 
     @Override
@@ -288,20 +300,32 @@ public class CoffinBlock extends HorizontalDirectionalBlock {
     }
 
     private static boolean canRestToNight(ServerLevel level) {
+        //? if >=26.1 {
         if (level.dimensionType().defaultClock().isEmpty()) {
             return false;
         }
         long clockTime = Math.floorMod(level.getDefaultClockTime(), 24000L);
+        //?} else {
+        /*if (level.dimensionType().hasFixedTime()) {
+            return false;
+        }
+        long clockTime = Math.floorMod(level.getDayTime(), 24000L);
+        *///?}
         return clockTime < DAY_END_TICK;
     }
 
     // Set the coffin as the player's respawn point, mirroring vanilla bed semantics (respawn is set the moment you
     // lie down). Exposed so CoffinNapManager can set it when a nap begins.
     public static void setCoffinRespawn(ServerLevel level, ServerPlayer player, BlockPos pos) {
+        //? if >=1.21.10 {
         ServerPlayer.RespawnConfig respawnConfig = new ServerPlayer.RespawnConfig(
                 LevelData.RespawnData.of(level.dimension(), pos, player.getYRot(), player.getXRot()),
                 false
         );
+        //?} else {
+        /*ServerPlayer.RespawnConfig respawnConfig =
+                new ServerPlayer.RespawnConfig(level.dimension(), pos, player.getYRot(), false);
+        *///?}
         player.setRespawnPosition(respawnConfig, true);
     }
 

@@ -1,4 +1,4 @@
-# neoforge.mods.toml — 元数据模板;占位变量由 build.gradle 的 generateModMetadata 从 gradle.properties 展开。
+# neoforge.mods.toml — 元数据模板;占位变量由 build.gradle 从 Stonecutter 集中属性展开。
 
 license="${mod_license}"
 # A file name (in the root of the mod JAR) containing a logo shown in the mod list.
@@ -17,6 +17,9 @@ description='''
 Every survival player is a zombie. Burn, rot, disguise yourself badly, and make
 villages regret teaching Steve how to place blocks.
 '''
+
+[features.${mod_id}]
+javaVersion="${java_version_range}"
 
 [[mixins]]
 config="${mod_id}.mixins.json"

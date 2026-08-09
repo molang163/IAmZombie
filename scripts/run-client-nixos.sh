@@ -3,4 +3,5 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-exec nix develop --no-update-lock-file --command ./gradlew runClient "$@"
+nix develop --no-update-lock-file --command ./gradlew 'Set active project to 26.2.x'
+exec nix develop --no-update-lock-file --command ./gradlew :26.2.x:runClient "$@"

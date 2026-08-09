@@ -15,7 +15,10 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySpawnReason;
+//? if >=26.2
 import net.minecraft.world.entity.EntityTypes;
+//? if <26.2
+//import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ai.Brain;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -59,7 +62,7 @@ final class IAmZombieDisguiseGameTestBodies {
         try {
             player = GameTestPlayers.spawnConnectedZombiePlayer(helper, ZombieForm.NORMAL, ZombieSize.ADULT);
             playerId = player.getUUID();
-            helper.assertFalse(player.hasInfiniteMaterials(),
+            GameTestAssertions.assertFalse(helper, player.hasInfiniteMaterials(),
                     "connected trade player must not retain infinite materials");
             player.setItemSlot(EquipmentSlot.HEAD, ItemStack.EMPTY);
             player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
@@ -67,19 +70,22 @@ final class IAmZombieDisguiseGameTestBodies {
             villager = helper.spawn(EntityTypes.VILLAGER, FIXTURE_POS);
             villager.setNoAi(true);
             MerchantOffer offer = installFixedOffer(villager);
-            helper.assertTrue(offer.getUses() == 0, "fixed villager offer should begin unused");
-            helper.assertTrue(player.containerMenu == player.inventoryMenu,
+            GameTestAssertions.assertTrue(helper, offer.getUses() == 0, "fixed villager offer should begin unused");
+            GameTestAssertions.assertTrue(helper, player.containerMenu == player.inventoryMenu,
                     "connected trade player should begin in its inventory menu");
 
-            InteractionResult result = player.interactOn(villager, InteractionHand.MAIN_HAND, Vec3.ZERO);
+            InteractionResult result = player.interactOn(villager, InteractionHand.MAIN_HAND
+                    //? if >=26.1
+                    , Vec3.ZERO
+            );
 
-            helper.assertTrue(result == InteractionResult.SUCCESS_SERVER,
+            GameTestAssertions.assertTrue(helper, result == InteractionResult.SUCCESS_SERVER,
                     "undisguised zombie interaction should return SUCCESS_SERVER");
-            helper.assertTrue(player.containerMenu == player.inventoryMenu,
+            GameTestAssertions.assertTrue(helper, player.containerMenu == player.inventoryMenu,
                     "undisguised zombie must not open a merchant menu");
-            helper.assertTrue(villager.getTradingPlayer() == null,
+            GameTestAssertions.assertTrue(helper, villager.getTradingPlayer() == null,
                     "denied villager must not acquire a trading player");
-            helper.assertTrue(offer.getUses() == 0,
+            GameTestAssertions.assertTrue(helper, offer.getUses() == 0,
                     "denied villager offer must remain unused");
         } finally {
             cleanup(helper, player, playerId, villager);
@@ -113,9 +119,12 @@ final class IAmZombieDisguiseGameTestBodies {
         double[] initialPlayerDistance = new double[1];
         Runnable cleanup = () -> cleanupFear(helper, testPlayerId, testVillager);
 
+        //? if >=26.1
         helper.runBeforeTestEnd(() -> {
+        //? if <26.1
+        //helper.runAtTickTime(helper.testInfo.getTimeoutTicks() - 1, () -> {
             try {
-                helper.fail("villager fear sequence did not complete before the timeout");
+                GameTestAssertions.fail(helper, "villager fear sequence did not complete before the timeout");
             } finally {
                 cleanup.run();
             }
@@ -126,7 +135,7 @@ final class IAmZombieDisguiseGameTestBodies {
                     try {
                         Brain<Villager> brain = testVillager.getBrain();
                         assertPlayerVisible(helper, testVillager, brain, testPlayer, "masked villager");
-                        helper.assertTrue(brain.getMemory(MemoryModuleType.NEAREST_HOSTILE).isEmpty(),
+                        GameTestAssertions.assertTrue(helper, brain.getMemory(MemoryModuleType.NEAREST_HOSTILE).isEmpty(),
                                 "masked visible zombie player must not become the villager's nearest hostile");
 
                         testVillager.getNavigation().stop();
@@ -159,35 +168,35 @@ final class IAmZombieDisguiseGameTestBodies {
 
             trader = EntityTypes.WANDERING_TRADER.create(level, EntitySpawnReason.STRUCTURE);
             if (trader == null) {
-                helper.fail("failed to create the wandering-trader fear fixture");
+                GameTestAssertions.fail(helper, "failed to create the wandering-trader fear fixture");
                 return;
             }
             moveTo(helper, trader, FEAR_MOB_POS);
             trader.goalSelector.removeAllGoals(goal -> true);
-            helper.assertTrue(trader.goalSelector.getAvailableGoals().isEmpty(),
+            GameTestAssertions.assertTrue(helper, trader.goalSelector.getAvailableGoals().isEmpty(),
                     "wandering trader must have no vanilla goals before joining the level");
-            helper.assertTrue(level.addFreshEntity(trader),
+            GameTestAssertions.assertTrue(helper, level.addFreshEntity(trader),
                     "wandering trader must be added through the real server entity lifecycle");
-            helper.assertFalse(level.getBlockState(trader.blockPosition().below()).isAir(),
+            GameTestAssertions.assertFalse(helper, level.getBlockState(trader.blockPosition().below()).isAir(),
                     "wandering-trader fear fixture must provide a pre-baked floor beneath the entity");
             // EntityType.create has not run a physics tick; initialize the support state proven by the fixture so
             // GroundPathNavigation can execute during the explicitly required synchronous selector tick.
             trader.setOnGround(true);
 
             Set<WrappedGoal> joinedGoals = trader.goalSelector.getAvailableGoals();
-            helper.assertTrue(joinedGoals.size() == 1,
+            GameTestAssertions.assertTrue(helper, joinedGoals.size() == 1,
                     "the production join handler must inject exactly one goal after vanilla goals are removed");
             WrappedGoal injectedGoal = joinedGoals.iterator().next();
-            helper.assertTrue(injectedGoal.getGoal() instanceof AvoidEntityGoal<?>,
+            GameTestAssertions.assertTrue(helper, injectedGoal.getGoal() instanceof AvoidEntityGoal<?>,
                     "the sole join-injected wandering-trader goal must be an AvoidEntityGoal");
-            helper.assertTrue(injectedGoal.getPriority() == VillagerFearRules.AVOID_ZOMBIE_PLAYER_GOAL_PRIORITY,
+            GameTestAssertions.assertTrue(helper, injectedGoal.getPriority() == VillagerFearRules.AVOID_ZOMBIE_PLAYER_GOAL_PRIORITY,
                     "the join-injected wandering-trader goal must keep the production fear priority");
 
             double initialPlayerDistance = trader.distanceToSqr(player);
             trader.goalSelector.tick();
-            helper.assertFalse(injectedGoal.isRunning(),
+            GameTestAssertions.assertFalse(helper, injectedGoal.isRunning(),
                     "disguised zombie player must not start the wandering-trader avoid goal");
-            helper.assertTrue(trader.getNavigation().getPath() == null,
+            GameTestAssertions.assertTrue(helper, trader.getNavigation().getPath() == null,
                     "disguised zombie player must not produce a wandering-trader escape path");
 
             player.setItemSlot(EquipmentSlot.HEAD, ItemStack.EMPTY);
@@ -195,13 +204,13 @@ final class IAmZombieDisguiseGameTestBodies {
                 trader.goalSelector.tick();
             }
 
-            helper.assertTrue(injectedGoal.isRunning(),
+            GameTestAssertions.assertTrue(helper, injectedGoal.isRunning(),
                     "removing the disguise must start the production wandering-trader avoid goal");
             Path path = trader.getNavigation().getPath();
-            helper.assertTrue(path != null && !path.isDone() && path.getNodeCount() > 0,
+            GameTestAssertions.assertTrue(helper, path != null && !path.isDone() && path.getNodeCount() > 0,
                     "the running wandering-trader avoid goal must install a non-empty path");
             Vec3 pathTarget = Vec3.atBottomCenterOf(path.getTarget());
-            helper.assertTrue(pathTarget.distanceToSqr(player.position()) > initialPlayerDistance,
+            GameTestAssertions.assertTrue(helper, pathTarget.distanceToSqr(player.position()) > initialPlayerDistance,
                     "the wandering-trader path target must be farther from the player than its initial position");
         } finally {
             cleanupFear(helper, playerId, trader);
@@ -216,7 +225,7 @@ final class IAmZombieDisguiseGameTestBodies {
         try {
             player = GameTestPlayers.spawnConnectedZombiePlayer(helper, ZombieForm.NORMAL, ZombieSize.ADULT);
             playerId = player.getUUID();
-            helper.assertFalse(player.hasInfiniteMaterials(),
+            GameTestAssertions.assertFalse(helper, player.hasInfiniteMaterials(),
                     "connected trade player must not retain infinite materials");
 
             ItemStack mask = new ItemStack(IAmZombieItems.DISGUISE_MASK.get());
@@ -231,38 +240,41 @@ final class IAmZombieDisguiseGameTestBodies {
             int breadBefore = inventoryCount(player, Items.BREAD);
             int usesBefore = offer.getUses();
             int maskDamageBefore = mask.getDamageValue();
-            helper.assertTrue(emeraldsBefore == 1, "trade fixture should contain exactly one emerald");
-            helper.assertTrue(breadBefore == 0, "trade fixture should begin without bread");
-            helper.assertTrue(usesBefore == 0, "fixed villager offer should begin unused");
+            GameTestAssertions.assertTrue(helper, emeraldsBefore == 1, "trade fixture should contain exactly one emerald");
+            GameTestAssertions.assertTrue(helper, breadBefore == 0, "trade fixture should begin without bread");
+            GameTestAssertions.assertTrue(helper, usesBefore == 0, "fixed villager offer should begin unused");
 
-            InteractionResult result = player.interactOn(villager, InteractionHand.MAIN_HAND, Vec3.ZERO);
-            helper.assertTrue(result.consumesAction(), "disguised villager interaction should be accepted");
-            helper.assertTrue(player.containerMenu instanceof MerchantMenu,
+            InteractionResult result = player.interactOn(villager, InteractionHand.MAIN_HAND
+                    //? if >=26.1
+                    , Vec3.ZERO
+            );
+            GameTestAssertions.assertTrue(helper, result.consumesAction(), "disguised villager interaction should be accepted");
+            GameTestAssertions.assertTrue(helper, player.containerMenu instanceof MerchantMenu,
                     "disguised zombie should open a MerchantMenu");
-            helper.assertTrue(villager.getTradingPlayer() == player,
+            GameTestAssertions.assertTrue(helper, villager.getTradingPlayer() == player,
                     "villager trading player should be the connected zombie player");
 
             MerchantMenu menu = (MerchantMenu) player.containerMenu;
             menu.tryMoveItems(0);
-            helper.assertTrue(menu.getSlot(2).getItem().is(Items.BREAD),
+            GameTestAssertions.assertTrue(helper, menu.getSlot(2).getItem().is(Items.BREAD),
                     "fixed emerald payment should populate the real merchant result slot with bread");
             ItemStack movedResult = menu.quickMoveStack(player, 2);
-            helper.assertTrue(movedResult.is(Items.BREAD) && movedResult.getCount() == 1,
+            GameTestAssertions.assertTrue(helper, movedResult.is(Items.BREAD) && movedResult.getCount() == 1,
                     "quick-moving the merchant result should complete one bread trade");
 
-            helper.assertTrue(inventoryCount(player, Items.EMERALD) == emeraldsBefore - 1,
+            GameTestAssertions.assertTrue(helper, inventoryCount(player, Items.EMERALD) == emeraldsBefore - 1,
                     "successful trade should consume exactly one emerald");
-            helper.assertTrue(inventoryCount(player, Items.BREAD) == breadBefore + 1,
+            GameTestAssertions.assertTrue(helper, inventoryCount(player, Items.BREAD) == breadBefore + 1,
                     "successful trade should place exactly one bread in player inventory");
-            helper.assertTrue(offer.getUses() == usesBefore + 1,
+            GameTestAssertions.assertTrue(helper, offer.getUses() == usesBefore + 1,
                     "successful trade should increase offer uses exactly once");
 
             ItemStack wornMask = player.getItemBySlot(EquipmentSlot.HEAD);
-            helper.assertTrue(wornMask.is(IAmZombieItems.DISGUISE_MASK.get()),
+            GameTestAssertions.assertTrue(helper, wornMask.is(IAmZombieItems.DISGUISE_MASK.get()),
                     "disguise mask should remain equipped after one trade");
-            helper.assertTrue(wornMask.getDamageValue() == maskDamageBefore + 1,
+            GameTestAssertions.assertTrue(helper, wornMask.getDamageValue() == maskDamageBefore + 1,
                     "successful trade should damage the disguise mask exactly once");
-            helper.assertTrue(wornMask.getDamageValue() < wornMask.getMaxDamage(),
+            GameTestAssertions.assertTrue(helper, wornMask.getDamageValue() < wornMask.getMaxDamage(),
                     "disguise mask should not break after one trade");
         } finally {
             cleanup(helper, player, playerId, villager);
@@ -300,18 +312,18 @@ final class IAmZombieDisguiseGameTestBodies {
             Brain<Villager> brain,
             ServerPlayer player,
             String phase) {
-        helper.assertTrue(brain.getMemory(MemoryModuleType.NEAREST_LIVING_ENTITIES)
+        GameTestAssertions.assertTrue(helper, brain.getMemory(MemoryModuleType.NEAREST_LIVING_ENTITIES)
                         .filter(nearby -> nearby.contains(player))
                         .isPresent(),
                 phase + " must include the connected player in nearby-entity memory; villager="
                         + villager.position() + ", player=" + player.position());
-        helper.assertTrue(villager.getSensing().hasLineOfSight(player),
+        GameTestAssertions.assertTrue(helper, villager.getSensing().hasLineOfSight(player),
                 phase + " must have unobstructed line of sight to the connected player; villager="
                         + villager.position() + ", player=" + player.position());
         NearestVisibleLivingEntities visible = brain
                 .getMemory(MemoryModuleType.NEAREST_VISIBLE_LIVING_ENTITIES)
                 .orElseThrow(() -> helper.assertionException(phase + " has not populated visible-entity memory"));
-        helper.assertTrue(visible.contains(player), phase + " must genuinely see the connected player");
+        GameTestAssertions.assertTrue(helper, visible.contains(player), phase + " must genuinely see the connected player");
     }
 
     private static void assertUnmaskedVillagerFlees(
@@ -321,16 +333,16 @@ final class IAmZombieDisguiseGameTestBodies {
             double initialPlayerDistance) {
         Brain<Villager> brain = villager.getBrain();
         assertPlayerVisible(helper, villager, brain, player, "unmasked villager");
-        helper.assertTrue(brain.getMemory(MemoryModuleType.NEAREST_HOSTILE)
+        GameTestAssertions.assertTrue(helper, brain.getMemory(MemoryModuleType.NEAREST_HOSTILE)
                         .filter(hostile -> hostile == player)
                         .isPresent(),
                 "unmasked villager must remember exactly the connected player as its nearest hostile");
-        helper.assertTrue(brain.isActive(Activity.PANIC),
+        GameTestAssertions.assertTrue(helper, brain.isActive(Activity.PANIC),
                 "unmasked villager must activate the vanilla PANIC activity");
         WalkTarget walkTarget = brain.getMemory(MemoryModuleType.WALK_TARGET)
                 .orElseThrow(() -> helper.assertionException(
                         "waiting for the unmasked villager to produce a panic walk target"));
-        helper.assertTrue(walkTarget.getTarget().currentPosition().distanceToSqr(player.position())
+        GameTestAssertions.assertTrue(helper, walkTarget.getTarget().currentPosition().distanceToSqr(player.position())
                         > initialPlayerDistance,
                 "the unmasked villager's panic walk target must lead away from the player");
     }

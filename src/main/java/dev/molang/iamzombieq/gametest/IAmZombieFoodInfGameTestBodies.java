@@ -9,7 +9,10 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
+//? if >=26.2
 import net.minecraft.world.entity.EntityTypes;
+//? if <26.2
+//import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.animal.equine.Horse;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -104,7 +107,7 @@ final class IAmZombieFoodInfGameTestBodies {
             return;
         }
         if (player.getEffect(MobEffects.HUNGER) != null) {
-            helper.fail("pufferfish (T4 SPECIAL) must NOT inflict the human-food Hunger punishment");
+            GameTestAssertions.fail(helper, "pufferfish (T4 SPECIAL) must NOT inflict the human-food Hunger punishment");
             return;
         }
         helper.succeed();
@@ -127,7 +130,7 @@ final class IAmZombieFoodInfGameTestBodies {
             return;
         }
         if (player.getEffect(MobEffects.HUNGER) != null) {
-            helper.fail("spider_eye (T1 CARRION) must NOT inflict the human-food Hunger punishment");
+            GameTestAssertions.fail(helper, "spider_eye (T1 CARRION) must NOT inflict the human-food Hunger punishment");
             return;
         }
         helper.succeed();
@@ -149,7 +152,7 @@ final class IAmZombieFoodInfGameTestBodies {
             return;
         }
         if (player.getEffect(MobEffects.NAUSEA) == null) {
-            helper.fail("T3 HUMAN_COOKED should also inflict Nausea");
+            GameTestAssertions.fail(helper, "T3 HUMAN_COOKED should also inflict Nausea");
             return;
         }
         helper.succeed();
@@ -171,7 +174,7 @@ final class IAmZombieFoodInfGameTestBodies {
             return;
         }
         if (player.getEffect(MobEffects.HUNGER) == null) {
-            helper.fail("cookie is still T3 HUMAN_COOKED, so it should also inflict the human-food Hunger");
+            GameTestAssertions.fail(helper, "cookie is still T3 HUMAN_COOKED, so it should also inflict the human-food Hunger");
             return;
         }
         helper.succeed();
@@ -230,7 +233,7 @@ final class IAmZombieFoodInfGameTestBodies {
             return;
         }
         if (player.getEffect(MobEffects.HUNGER) != null) {
-            helper.fail("honey_bottle (T4 SPECIAL) must NOT inflict the human-food Hunger punishment");
+            GameTestAssertions.fail(helper, "honey_bottle (T4 SPECIAL) must NOT inflict the human-food Hunger punishment");
             return;
         }
         helper.succeed();
@@ -267,11 +270,11 @@ final class IAmZombieFoodInfGameTestBodies {
     private static boolean assertEffect(GameTestHelper helper, FakePlayer player, Holder<MobEffect> effect, int expectedAmplifier, String what) {
         MobEffectInstance instance = player.getEffect(effect);
         if (instance == null) {
-            helper.fail("expected effect missing: " + what);
+            GameTestAssertions.fail(helper, "expected effect missing: " + what);
             return false;
         }
         if (instance.getAmplifier() != expectedAmplifier) {
-            helper.fail("wrong amplifier for " + what + ": expected " + expectedAmplifier + " but was " + instance.getAmplifier());
+            GameTestAssertions.fail(helper, "wrong amplifier for " + what + ": expected " + expectedAmplifier + " but was " + instance.getAmplifier());
             return false;
         }
         return true;

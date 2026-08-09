@@ -23,12 +23,22 @@ public final class ZombieRenderRules {
             case DROWNED -> new ZombieRenderPlan(
                     baby ? ZombieMonsterBody.DROWNED_BABY : ZombieMonsterBody.DROWNED,
                     "minecraft:drowned",
+                    // CROSS_VERSION-BABY-MONSTER-TEXTURE:rules-drowned
+                    //? if >=26.1 {
                     baby ? "minecraft:textures/entity/zombie/drowned_baby.png" : monsterTexturePath(ZombieForm.DROWNED)
+                    //?} else {
+                    /*monsterTexturePath(ZombieForm.DROWNED)
+                    *///?}
             );
             case HUSK -> new ZombieRenderPlan(
                     baby ? ZombieMonsterBody.HUSK_BABY : ZombieMonsterBody.HUSK,
                     "minecraft:husk",
+                    // CROSS_VERSION-BABY-MONSTER-TEXTURE:rules-husk
+                    //? if >=26.1 {
                     baby ? "minecraft:textures/entity/zombie/husk_baby.png" : monsterTexturePath(ZombieForm.HUSK)
+                    //?} else {
+                    /*monsterTexturePath(ZombieForm.HUSK)
+                    *///?}
             );
             case ZOMBIFIED_PIGLIN -> new ZombieRenderPlan(
                     baby ? ZombieMonsterBody.ZOMBIFIED_PIGLIN_BABY : ZombieMonsterBody.ZOMBIFIED_PIGLIN,
@@ -43,7 +53,12 @@ public final class ZombieRenderRules {
             case NORMAL -> new ZombieRenderPlan(
                     baby ? ZombieMonsterBody.ZOMBIE_BABY : ZombieMonsterBody.ZOMBIE,
                     "minecraft:zombie",
+                    // CROSS_VERSION-BABY-MONSTER-TEXTURE:rules-normal
+                    //? if >=26.1 {
                     baby ? "minecraft:textures/entity/zombie/zombie_baby.png" : monsterTexturePath(ZombieForm.NORMAL)
+                    //?} else {
+                    /*monsterTexturePath(ZombieForm.NORMAL)
+                    *///?}
             );
         };
     }

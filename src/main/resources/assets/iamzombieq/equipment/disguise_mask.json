@@ -4,11 +4,6 @@
       {
         "texture": "iamzombieq:disguise_mask"
       }
-    ],
-    "humanoid_baby": [
-      {
-        "texture": "iamzombieq:disguise_mask"
-      }
-    ]
+    ]${humanoid_baby_layer}
   }
 }

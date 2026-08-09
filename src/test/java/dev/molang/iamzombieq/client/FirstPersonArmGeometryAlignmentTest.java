@@ -12,13 +12,34 @@ import net.minecraft.client.model.geom.PartPose;
 import net.minecraft.client.model.geom.builders.CubeDeformation;
 import net.minecraft.client.model.geom.builders.LayerDefinition;
 import net.minecraft.client.model.geom.builders.MeshTransformer;
+//? if >=26.1
 import net.minecraft.client.model.monster.piglin.AdultZombifiedPiglinModel;
+//? if >=26.1
 import net.minecraft.client.model.monster.piglin.BabyZombifiedPiglinModel;
+//? if >=26.1
 import net.minecraft.client.model.monster.zombie.BabyDrownedModel;
+//? if >=26.1
 import net.minecraft.client.model.monster.zombie.BabyZombieModel;
+//? if >=1.21.11
+import net.minecraft.client.model.monster.piglin.PiglinModel;
+//? if <1.21.11
+//import net.minecraft.client.model.PiglinModel;
+//? if >=1.21.11
+import net.minecraft.client.model.monster.piglin.ZombifiedPiglinModel;
+//? if <1.21.11
+//import net.minecraft.client.model.ZombifiedPiglinModel;
+//? if >=1.21.11
 import net.minecraft.client.model.monster.zombie.DrownedModel;
+//? if <1.21.11
+//import net.minecraft.client.model.DrownedModel;
+//? if >=1.21.11
 import net.minecraft.client.model.monster.zombie.ZombieModel;
+//? if <1.21.11
+//import net.minecraft.client.model.ZombieModel;
+//? if >=1.21.11
 import net.minecraft.client.model.player.PlayerModel;
+//? if <1.21.11
+//import net.minecraft.client.model.PlayerModel;
 import net.minecraft.client.renderer.entity.state.ZombieRenderState;
 import net.minecraft.world.entity.HumanoidArm;
 import org.joml.Matrix4f;
@@ -43,8 +64,8 @@ class FirstPersonArmGeometryAlignmentTest {
     ) {
         PlayerModel playerModel = playerModel(playerShape);
         HumanoidModel<?> monsterModel = monsterModel(monsterShape, baby);
-        ModelPart playerArm = playerModel.getArm(armSide);
-        ModelPart monsterArm = monsterModel.getArm(armSide);
+        ModelPart playerArm = ZombiePlayerVisuals.humanoidArm(playerModel, armSide);
+        ModelPart monsterArm = ZombiePlayerVisuals.humanoidArm(monsterModel, armSide);
         ModelPart monsterRoot = monsterModel.root();
         float roll = roll(armSide);
 
@@ -106,8 +127,8 @@ class FirstPersonArmGeometryAlignmentTest {
     void adultHuskRootScaleAndYOffsetParticipateInTheOffset() {
         PlayerModel playerModel = playerModel(PlayerShape.WIDE);
         HumanoidModel<?> huskModel = monsterModel(MonsterShape.HUSK, false);
-        ModelPart playerArm = playerModel.getArm(HumanoidArm.RIGHT);
-        ModelPart huskArm = huskModel.getArm(HumanoidArm.RIGHT);
+        ModelPart playerArm = ZombiePlayerVisuals.humanoidArm(playerModel, HumanoidArm.RIGHT);
+        ModelPart huskArm = ZombiePlayerVisuals.humanoidArm(huskModel, HumanoidArm.RIGHT);
         PartPose huskRootPose = huskModel.root().getInitialPose();
         float roll = roll(HumanoidArm.RIGHT);
 
@@ -135,6 +156,11 @@ class FirstPersonArmGeometryAlignmentTest {
                 "the aligned adult husk arm must retain the official 1.0625 root scale");
     }
 
+    @Test
+    void officialArmMatrixRetainsAllThirtyTwoCases() {
+        assertEquals(32L, officialArmCases().count());
+    }
+
     private static Stream<Arguments> officialArmCases() {
         Stream.Builder<Arguments> cases = Stream.builder();
         for (PlayerShape playerShape : PlayerShape.values()) {
@@ -159,20 +185,63 @@ class FirstPersonArmGeometryAlignmentTest {
 
     private static HumanoidModel<?> monsterModel(MonsterShape monsterShape, boolean baby) {
         return switch (monsterShape) {
-            case NORMAL -> baby
-                    ? new BabyZombieModel<ZombieRenderState>(BabyZombieModel.createBodyLayer(CubeDeformation.NONE).bakeRoot())
-                    : new ZombieModel<ZombieRenderState>(humanoidBodyLayer().bakeRoot());
-            case DROWNED -> baby
-                    ? new BabyDrownedModel(BabyDrownedModel.createBodyLayer(CubeDeformation.NONE).bakeRoot())
-                    : new DrownedModel(DrownedModel.createBodyLayer(CubeDeformation.NONE).bakeRoot());
-            case HUSK -> baby
-                    ? new BabyZombieModel<ZombieRenderState>(BabyZombieModel.createBodyLayer(CubeDeformation.NONE).bakeRoot())
-                    : new ZombieModel<ZombieRenderState>(
-                            humanoidBodyLayer().apply(MeshTransformer.scaling(1.0625F)).bakeRoot()
-                    );
-            case ZOMBIFIED_PIGLIN -> baby
-                    ? new BabyZombifiedPiglinModel(BabyZombifiedPiglinModel.createBodyLayer().bakeRoot())
-                    : new AdultZombifiedPiglinModel(AdultZombifiedPiglinModel.createBodyLayer().bakeRoot());
+            case NORMAL -> {
+                if (baby) {
+                    //? if >=26.1 {
+                    yield new BabyZombieModel<ZombieRenderState>(
+                            BabyZombieModel.createBodyLayer(CubeDeformation.NONE).bakeRoot());
+                    //?} else {
+                    /*yield new ZombieModel<ZombieRenderState>(
+                            humanoidBodyLayer().apply(HumanoidModel.BABY_TRANSFORMER).bakeRoot());
+                    *///?}
+                }
+                yield new ZombieModel<ZombieRenderState>(humanoidBodyLayer().bakeRoot());
+            }
+            case DROWNED -> {
+                if (baby) {
+                    //? if >=26.1 {
+                    yield new BabyDrownedModel(
+                            BabyDrownedModel.createBodyLayer(CubeDeformation.NONE).bakeRoot());
+                    //?} else {
+                    /*yield new DrownedModel(DrownedModel.createBodyLayer(CubeDeformation.NONE)
+                            .apply(HumanoidModel.BABY_TRANSFORMER).bakeRoot());
+                    *///?}
+                }
+                yield new DrownedModel(DrownedModel.createBodyLayer(CubeDeformation.NONE).bakeRoot());
+            }
+            case HUSK -> {
+                if (baby) {
+                    //? if >=26.1 {
+                    yield new BabyZombieModel<ZombieRenderState>(
+                            BabyZombieModel.createBodyLayer(CubeDeformation.NONE).bakeRoot());
+                    //?} else {
+                    /*yield new ZombieModel<ZombieRenderState>(humanoidBodyLayer()
+                            .apply(HumanoidModel.BABY_TRANSFORMER)
+                            .apply(MeshTransformer.scaling(1.0625F)).bakeRoot());
+                    *///?}
+                }
+                yield new ZombieModel<ZombieRenderState>(
+                        humanoidBodyLayer().apply(MeshTransformer.scaling(1.0625F)).bakeRoot());
+            }
+            case ZOMBIFIED_PIGLIN -> {
+                if (baby) {
+                    //? if >=26.1 {
+                    yield new BabyZombifiedPiglinModel(
+                            BabyZombifiedPiglinModel.createBodyLayer().bakeRoot());
+                    //?} else {
+                    /*yield new ZombifiedPiglinModel(LayerDefinition.create(
+                            PiglinModel.createMesh(CubeDeformation.NONE), 64, 64)
+                            .apply(HumanoidModel.BABY_TRANSFORMER).bakeRoot());
+                    *///?}
+                }
+                //? if >=26.1 {
+                yield new AdultZombifiedPiglinModel(
+                        AdultZombifiedPiglinModel.createBodyLayer().bakeRoot());
+                //?} else {
+                /*yield new ZombifiedPiglinModel(
+                        LayerDefinition.create(PiglinModel.createMesh(CubeDeformation.NONE), 64, 64).bakeRoot());
+                *///?}
+            }
         };
     }
 
@@ -205,7 +274,14 @@ class FirstPersonArmGeometryAlignmentTest {
                 }
                 Vector3f center = new Vector3f();
                 for (ModelPart.Vertex vertex : polygon.vertices()) {
+                    //? if >=1.21.10 {
                     center.add(vertex.worldX(), vertex.worldY(), vertex.worldZ());
+                    //?} else {
+                    /*center.add(
+                            vertex.pos().x() / 16.0F,
+                            vertex.pos().y() / 16.0F,
+                            vertex.pos().z() / 16.0F);
+                    *///?}
                 }
                 center.div(polygon.vertices().length);
                 if (selected[0] == null

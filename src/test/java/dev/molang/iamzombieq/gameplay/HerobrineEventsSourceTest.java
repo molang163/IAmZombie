@@ -8,8 +8,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.molang.iamzombieq.util.SourceScan;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 class HerobrineEventsSourceTest {
@@ -18,6 +23,113 @@ class HerobrineEventsSourceTest {
     private static final Path ATTACHMENTS = Path.of("src/main/java/dev/molang/iamzombieq/state/IAmZombieAttachments.java");
     private static final Path ENCOUNTER_STATE = Path.of("src/main/java/dev/molang/iamzombieq/state/HerobrineEncounterState.java");
     private static final Path OMEN_SAVED_DATA = Path.of("src/main/java/dev/molang/iamzombieq/gameplay/OmenLightsSavedData.java");
+    private static final Path MOUNT_GAMETEST =
+            Path.of("src/main/java/dev/molang/iamzombieq/gametest/IAmZombieMountGameTestBodies.java");
+
+    @Test
+    void generatedProductionUsesTheNodeNativeEntityInteractionAbi() throws IOException {
+        String executingNode = System.getProperty("iamzombieq.test.nodeId");
+        assertTrue(Set.of("26.2.x", "26.1.x", "1.21.11", "1.21.10", "1.21.8").contains(executingNode),
+                "unknown Stonecutter test node: " + executingNode);
+        String source = SourceScan.mainJava(SOURCE);
+        String activeSource = SourceScan.stripComments(source);
+        boolean splitEvents = !executingNode.equals("26.2.x");
+        String generalSignature =
+                "public static void onEntityInteract(PlayerInteractEvent.EntityInteract event)";
+        String specificSignature =
+                "public static void onEntityInteractSpecific(PlayerInteractEvent.EntityInteractSpecific event)";
+        String generalHandler = SourceScan.compact(SourceScan.methodBody(activeSource, generalSignature));
+        assertEquals(1, SourceScan.countOccurrences(activeSource, generalSignature),
+                "every node must retain exactly one general interaction handler");
+        assertEquals(1, subscriberCount(activeSource, "EntityInteract"),
+                "the general interaction handler must remain the only general-event subscriber");
+        assertEquals(
+                SourceScan.compact(generalSignature
+                        + " { cancelHerobrineInteraction("
+                        + "event.getTarget(), event, event::setCancellationResult); }"),
+                generalHandler);
+        assertEquals(splitEvents ? 1 : 0,
+                SourceScan.countOccurrences(activeSource, specificSignature),
+                "only pre-26.2 nodes may retain the split specific-event subscriber");
+        if (splitEvents) {
+            assertEquals(1, subscriberCount(activeSource, "EntityInteractSpecific"),
+                    "pre-26.2 must expose exactly one specific-event subscriber");
+            assertEquals(
+                    SourceScan.compact(specificSignature
+                            + " { cancelHerobrineInteraction("
+                            + "event.getTarget(), event, event::setCancellationResult); }"),
+                    SourceScan.compact(SourceScan.methodBody(activeSource, specificSignature)));
+        } else {
+            try (var paths = Files.walk(Path.of("src/main/java"))) {
+                for (Path path : paths.filter(Files::isRegularFile)
+                        .filter(candidate -> candidate.toString().endsWith(".java"))
+                        .toList()) {
+                    assertFalse(SourceScan.stripComments(Files.readString(path))
+                                    .contains("PlayerInteractEvent.EntityInteractSpecific"),
+                            () -> "26.2 production source links the removed split event type in " + path);
+                }
+            }
+        }
+        String cancellation = SourceScan.compact(SourceScan.methodBody(
+                activeSource, "private static void cancelHerobrineInteraction"));
+        assertTrue(cancellation.contains("targetinstanceofHerobrineEntity"));
+        assertTrue(cancellation.contains("event.setCanceled(true)"));
+        assertTrue(cancellation.contains(
+                "setCancellationResult.accept(InteractionResult.SUCCESS_SERVER)"));
+
+        String mountGameTest = Files.readString(MOUNT_GAMETEST);
+        assertFalse(mountGameTest.contains("new PlayerInteractEvent.EntityInteract("),
+                "GameTests must not hand-construct a version-specific event ABI");
+        String interaction = SourceScan.methodBody(
+                mountGameTest, "private static PlayerInteractEvent.EntityInteract interact");
+        assertTrue(interaction.contains("//? if >=26.1"),
+                "the optional interaction location must stay behind the local Stonecutter seam");
+        assertTrue(interaction.contains("Vec3.ZERO"),
+                "the location-aware nodes must retain an exact local hit position");
+        String activeInteraction = SourceScan.compact(SourceScan.stripComments(interaction));
+        boolean locationApi = Set.of("26.2.x", "26.1.x").contains(executingNode);
+        String locationCall = "player.interactOn(target,InteractionHand.MAIN_HAND,Vec3.ZERO);";
+        String legacyCall = "player.interactOn(target,InteractionHand.MAIN_HAND);";
+        assertEquals(locationApi ? 1 : 0, SourceScan.countOccurrences(activeInteraction, locationCall));
+        assertEquals(locationApi ? 0 : 1, SourceScan.countOccurrences(activeInteraction, legacyCall));
+        assertEquals(1, SourceScan.countOccurrences(activeInteraction, "player.interactOn("),
+                "the helper must issue exactly one real node-native interaction");
+    }
+
+    @Test
+    void compiledHandlerLinksExactlyTheNodeNativeEventTypes() throws IOException {
+        String resource = "/" + HerobrineEvents.class.getName().replace('.', '/') + ".class";
+        try (InputStream input = HerobrineEvents.class.getResourceAsStream(resource)) {
+            if (input == null) {
+                throw new AssertionError("missing class bytes for " + HerobrineEvents.class.getName());
+            }
+            String constantPool = new String(input.readAllBytes(), StandardCharsets.ISO_8859_1);
+            String generalDescriptor =
+                    "(Lnet/neoforged/neoforge/event/entity/player/PlayerInteractEvent$EntityInteract;)V";
+            String specificDescriptor =
+                    "(Lnet/neoforged/neoforge/event/entity/player/PlayerInteractEvent$EntityInteractSpecific;)V";
+            assertTrue(constantPool.contains(generalDescriptor),
+                    "compiled production bytecode must retain the general handler descriptor");
+            boolean splitEvents = !System.getProperty("iamzombieq.test.nodeId").equals("26.2.x");
+            assertEquals(splitEvents,
+                    constantPool.contains(specificDescriptor),
+                    "compiled production bytecode must use the node-native specific handler descriptor");
+        }
+    }
+
+    private static int subscriberCount(String source, String eventType) {
+        Matcher matcher = Pattern.compile(
+                        "@SubscribeEvent\\s+public\\s+static\\s+void\\s+\\w+\\s*\\(\\s*"
+                                + "PlayerInteractEvent\\."
+                                + Pattern.quote(eventType)
+                                + "\\s+\\w+\\s*\\)")
+                .matcher(source);
+        int count = 0;
+        while (matcher.find()) {
+            count++;
+        }
+        return count;
+    }
 
     @Test
     void subscribesToTheCorrectServerEvents() throws IOException {
@@ -192,7 +304,9 @@ class HerobrineEventsSourceTest {
                 "the resolved next snapshot should be what gets persisted");
         assertTrue(source.contains("herobrine.discard()"), "non-lethal sightings should make Herobrine vanish");
         assertTrue(source.contains("resolution.cue()"), "phase upgrades should emit the cue carried by the resolution");
-        assertTrue(source.contains("sendSystemMessage"), "phase upgrades should message the affected player");
+        assertTrue(source.contains(
+                        "player.sendSystemMessage(Component.translatable(cue.subtitleKey()), true);"),
+                "phase upgrades must remain action-bar messages that bypass hidden chat");
     }
 
     @Test
@@ -271,6 +385,34 @@ class HerobrineEventsSourceTest {
         assertTrue(omen.contains("BlockState.CODEC") && omen.contains("BlockPos.CODEC"),
                 "the omen codec should round-trip the blockstate + position losslessly");
         assertTrue(omen.contains("setDirty()"), "mutating the omen SavedData should mark it dirty for saving");
+
+        String rawOmen = SourceScan.compact(omen);
+        String activeOmen = SourceScan.compact(SourceScan.stripComments(omen));
+        String identifierArgument = "ModIds.id(\"herobrine_omen_lights\"),";
+        String stringArgument = "\"iamzombieq/herobrine_omen_lights\",";
+        String identifierType = "newSavedDataType<>(" + identifierArgument
+                + "OmenLightsSavedData::new,CODEC)";
+        String stringType = "newSavedDataType<>(" + stringArgument
+                + "OmenLightsSavedData::new,CODEC)";
+        assertEquals(1, SourceScan.countOccurrences(rawOmen, identifierArgument),
+                "canonical source must retain the namespaced Identifier form");
+        assertEquals(1, SourceScan.countOccurrences(rawOmen, stringArgument),
+                "canonical source must retain the same namespaced path for legacy String IDs");
+        assertFalse(omen.contains("iamzombieq_herobrine_omen_lights"),
+                "legacy storage must not collapse the namespace/path into a different underscore ID");
+
+        String executingNode = System.getProperty("iamzombieq.test.nodeId");
+        assertTrue(Set.of("26.2.x", "26.1.x", "1.21.11", "1.21.10", "1.21.8").contains(executingNode),
+                "test must run under one of the five frozen Stonecutter nodes");
+        boolean identifierApi = Set.of("26.2.x", "26.1.x").contains(executingNode);
+        assertEquals(identifierApi ? 1 : 0,
+                SourceScan.countOccurrences(activeOmen, identifierType));
+        assertEquals(identifierApi ? 0 : 1,
+                SourceScan.countOccurrences(activeOmen, stringType));
+        assertTrue(rawOmen.contains("optionalFieldOf(\"lights\",List.of())"));
+        assertTrue(rawOmen.contains("fieldOf(\"pos\")"));
+        assertTrue(rawOmen.contains("fieldOf(\"state\")"));
+        assertTrue(rawOmen.contains("fieldOf(\"restoreAt\")"));
     }
 
     @Test

@@ -41,7 +41,12 @@ abstract class HurtByTargetGoalAlertMixin {
         if (other instanceof NeutralMob neutral
                 && ZombieMobTargetingEvents.wouldDenyZombiePlayerTarget(other, target)) {
             // Mirror the mod's alertFormMatchedUndead pattern: anger BEFORE the (vanilla) setTarget that follows.
+            // CROSS_VERSION-PERSISTENT-ANGER-TARGET-API
+            //? if >=1.21.11 {
             neutral.setPersistentAngerTarget(EntityReference.of(target));
+            //?} else {
+            /*neutral.setPersistentAngerTarget(target.getUUID());
+            *///?}
             neutral.startPersistentAngerTimer();
         }
     }

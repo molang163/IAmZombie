@@ -38,7 +38,11 @@ public final class ConfigMigrationBootstrap {
         if (DatagenModLoader.isRunningDataGen()) {
             return;
         }
+        //? if >=1.21.10 {
         if (FMLEnvironment.getDist() == Dist.DEDICATED_SERVER) {
+        //?} else {
+        /*if (FMLEnvironment.dist == Dist.DEDICATED_SERVER) {
+        *///?}
             return;
         }
         ProductionConfigMigration.migratePreferences(

@@ -22,7 +22,12 @@ import java.util.Set;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.geom.ModelLayerLocation;
+// CROSS_VERSION-SKULL-MODEL-NAMESPACE:client-import
+//? if >=1.21.11 {
 import net.minecraft.client.model.object.skull.SkullModel;
+//?} else {
+/*import net.minecraft.client.model.SkullModel;
+*///?}
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.state.EntityRenderState;
@@ -157,7 +162,14 @@ public final class IAmZombieClient {
     private static void createSkullModels(EntityRenderersEvent.CreateSkullModels event) {
         // Custom (non-vanilla) skull type → registered with a 64x64 humanoid model (SkullModel::new) and the fixed
         // Herobrine skin; this feeds SkullBlockRenderer's model/SKIN_BY_TYPE maps for block, worn and item rendering.
+        // CROSS_VERSION-SKULL-MODEL-REGISTRATION-API
+        //? if >=1.21.10 {
         event.registerSkullModel(HerobrineHeadType.HEROBRINE, HEROBRINE_HEAD_LAYER, HEROBRINE_HEAD_TEXTURE);
+        //?} else {
+        /*event.registerSkullModel(HerobrineHeadType.HEROBRINE, HEROBRINE_HEAD_LAYER);
+        net.minecraft.client.renderer.blockentity.SkullBlockRenderer.SKIN_BY_TYPE.put(
+                HerobrineHeadType.HEROBRINE, HEROBRINE_HEAD_TEXTURE);
+        *///?}
     }
 
     private static void registerRendererLayers(EntityRenderersEvent.AddLayers event) {
@@ -165,39 +177,77 @@ public final class IAmZombieClient {
     }
 
     private static void registerRenderStateModifiers(RegisterRenderStateModifiersEvent event) {
+        //? if >=26.1 {
         event.registerAvatarEntityModifier(new net.neoforged.neoforge.client.renderstate.AvatarRenderStateModifier() {
             @Override
             public <T extends net.minecraft.world.entity.Avatar & net.minecraft.client.entity.ClientAvatarEntity> void accept(
                     T avatar,
                     net.minecraft.client.renderer.entity.state.AvatarRenderState renderState
             ) {
-                if (!(avatar instanceof AbstractClientPlayer player)
-                        || !ZombieRenderRules.usesMonsterTexture(IAmZombieClientConfig.PLAYER_SKIN_MODE.get())
-                        || !ZombiePlayerVisuals.shouldUseZombieVisuals(player)) {
-                    ZombiePlayerRenderReplacement.set(renderState, null);
-                    return;
-                }
-
-                LivingEntity shape = ZOMBIE_PLAYER_SHAPES.shapeFor(player);
-                if (shape == null) {
-                    // No shape entity could be created (EntityType.create returned null) -> vanilla avatar (no NPE).
-                    ZombiePlayerRenderReplacement.set(renderState, null);
-                    return;
-                }
-                @SuppressWarnings("unchecked")
-                EntityRenderer<LivingEntity, EntityRenderState> renderer = (EntityRenderer<LivingEntity, EntityRenderState>) Minecraft.getInstance()
-                        .getEntityRenderDispatcher()
-                        .getRenderer(shape);
-                ZombiePlayerRenderReplacement replacement = ZOMBIE_PLAYER_SHAPES.replacementFor(player, renderer);
-                if (replacement == null) {
-                    ZombiePlayerRenderReplacement.set(renderState, null);
-                    return;
-                }
-                EntityRenderState shapeState = replacement.renderState();
-                ZombiePlayerRenderReplacement.copyAvatarAnimation(renderState, shapeState);
-                ZombiePlayerRenderReplacement.set(renderState, replacement);
+                processAvatarRenderState(avatar, renderState);
             }
         });
+        //?}
+        //? if >=1.21.10 && <26.1 {
+        /*event.<net.minecraft.world.entity.Entity,
+                        net.minecraft.client.renderer.entity.state.AvatarRenderState>registerEntityModifier(
+                new com.google.common.reflect.TypeToken<
+                        net.minecraft.client.renderer.entity.player.AvatarRenderer<?>>() {},
+                (entity, renderState) -> {
+                    if (entity instanceof net.minecraft.world.entity.Avatar avatar) {
+                        processAvatarRenderState(avatar, renderState);
+                    }
+                });
+        *///?}
+        //? if <1.21.10 {
+        /*event.registerEntityModifier(
+                net.minecraft.client.renderer.entity.player.PlayerRenderer.class,
+                (avatar, renderState) -> processAvatarRenderState(avatar, renderState));
+        *///?}
+    }
+
+    private static void processAvatarRenderState(
+            //? if >=1.21.10 {
+            net.minecraft.world.entity.Avatar avatar,
+            //?} else {
+            /*net.minecraft.client.player.AbstractClientPlayer avatar,
+            *///?}
+            //? if >=1.21.10
+            net.minecraft.client.renderer.entity.state.AvatarRenderState renderState
+            //? if <1.21.10
+            //net.minecraft.client.renderer.entity.state.PlayerRenderState renderState
+    ) {
+        //? if >=1.21.10 {
+        if (!(avatar instanceof AbstractClientPlayer player)
+                || !ZombieRenderRules.usesMonsterTexture(IAmZombieClientConfig.PLAYER_SKIN_MODE.get())
+                || !ZombiePlayerVisuals.shouldUseZombieVisuals(player)) {
+        //?} else {
+        /*AbstractClientPlayer player = avatar;
+        if (!ZombieRenderRules.usesMonsterTexture(IAmZombieClientConfig.PLAYER_SKIN_MODE.get())
+                || !ZombiePlayerVisuals.shouldUseZombieVisuals(player)) {
+        *///?}
+            ZombiePlayerRenderReplacement.set(renderState, null);
+            return;
+        }
+
+        LivingEntity shape = ZOMBIE_PLAYER_SHAPES.shapeFor(player);
+        if (shape == null) {
+            // No shape entity could be created (EntityType.create returned null) -> vanilla avatar (no NPE).
+            ZombiePlayerRenderReplacement.set(renderState, null);
+            return;
+        }
+        @SuppressWarnings("unchecked")
+        EntityRenderer<LivingEntity, EntityRenderState> renderer = (EntityRenderer<LivingEntity, EntityRenderState>) Minecraft.getInstance()
+                .getEntityRenderDispatcher()
+                .getRenderer(shape);
+        ZombiePlayerRenderReplacement replacement = ZOMBIE_PLAYER_SHAPES.replacementFor(player, renderer);
+        if (replacement == null) {
+            ZombiePlayerRenderReplacement.set(renderState, null);
+            return;
+        }
+        EntityRenderState shapeState = replacement.renderState();
+        ZombiePlayerRenderReplacement.copyAvatarAnimation(renderState, shapeState);
+        ZombiePlayerRenderReplacement.set(renderState, replacement);
     }
 
     @SubscribeEvent
@@ -319,7 +369,12 @@ public final class IAmZombieClient {
         if (event.getSound() == null) {
             return;
         }
-        Identifier id = event.getSound().getIdentifier();
+        Identifier id = event.getSound()
+                //? if >=1.21.11 {
+                .getIdentifier();
+                //?} else {
+                /*.getLocation();
+                *///?}
         // The lethal stinger arms the brief jolt vignette (HB-JOLT) and is always allowed through.
         if (id.equals(JOLT_STINGER_ID)) {
             if (IAmZombiePreferencesConfig.HEROBRINE_JOLT_VIGNETTE_ENABLED.get()) {
@@ -337,12 +392,18 @@ public final class IAmZombieClient {
     }
 
     @SubscribeEvent
+    //? if >=1.21.10
     public static void onRenderPlayerPre(RenderPlayerEvent.Pre<?> event) {
+    //? if <1.21.10
+    //public static void onRenderPlayerPre(RenderPlayerEvent.Pre event) {
         ZombiePlayerVisuals.applyPlayerSkin(event.getRenderState());
     }
 
     @SubscribeEvent
+    //? if >=26.2
     public static void onRenderArm(RenderArmEvent<?> event) {
+    //? if <26.2
+    //public static void onRenderArm(RenderArmEvent event) {
         ZombiePlayerVisuals.renderFirstPersonArm(event);
     }
 

@@ -35,7 +35,10 @@ import net.minecraft.stats.Stats;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.damagesource.DamageType;
 import net.minecraft.world.damagesource.DamageTypes;
+//? if >=26.2
 import net.minecraft.world.entity.EntityTypes;
+//? if <26.2
+//import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
@@ -57,7 +60,7 @@ import net.neoforged.neoforge.network.payload.SyncAttachmentsPayload;
 /**
  * FakePlayer- and connected-ServerPlayer-driven NeoForge GameTest bodies for the FORM and ATTR
  * test cases of {@code iamzombieq}, registered by {@link IAmZombieFormGameTests}. These are the runtime
- * counterparts of the pure-logic (L0) coverage in {@code ZombieEvolutionRulesTest} /
+ * counterparts of the pure-logic coverage in {@code ZombieEvolutionRulesTest} /
  * {@code ZombieBalanceRulesTest}: rather than asserting the rule functions in isolation, each drives the real
  * server-side seam the production handler subscribes to.
  *
@@ -94,17 +97,17 @@ final class IAmZombieFormGameTestBodies {
      * spawn helper performs the same attachment write the mod's first-login handler performs
      * ({@code PlayerZombieData.DEFAULT} state), so this asserts the attach-time invariant the runtime depends on. The
      * login-side effects (root advancement, starting items, recipe unlock) need a real {@code PlayerLoggedInEvent}
-     * with a connection and are deferred to L0/manual.
+     * with a connection and are deferred to unit or manual coverage.
      */
     static void formDefaultState(GameTestHelper helper) {
         FakePlayer player = GameTestPlayers.spawnZombieFakePlayer(helper, ZombieForm.NORMAL, ZombieSize.ADULT);
         if (!player.hasData(IAmZombieAttachments.PLAYER_ZOMBIE)) {
-            helper.fail("a zombie FakePlayer must carry the PLAYER_ZOMBIE attachment");
+            GameTestAssertions.fail(helper, "a zombie FakePlayer must carry the PLAYER_ZOMBIE attachment");
             return;
         }
         if (GameTestPlayers.stateOf(player).form() != ZombieForm.NORMAL
                 || GameTestPlayers.stateOf(player).size() != ZombieSize.ADULT) {
-            helper.fail("a freshly-attached zombie player must default to NORMAL/ADULT");
+            GameTestAssertions.fail(helper, "a freshly-attached zombie player must default to NORMAL/ADULT");
             return;
         }
         helper.succeed();
@@ -127,9 +130,9 @@ final class IAmZombieFormGameTestBodies {
             observerRegistered = true;
 
             boolean damaged = player.hurtServer(level, level.damageSources().starve(), Float.MAX_VALUE);
-            helper.assertTrue(damaged, "starvation damage should be accepted by the connected player");
+            GameTestAssertions.assertTrue(helper, damaged, "starvation damage should be accepted by the connected player");
             assertCanceledDeath(helper, observer, "starvation");
-            helper.assertTrue(GameTestPlayers.stateOf(player).equals(
+            GameTestAssertions.assertTrue(helper, GameTestPlayers.stateOf(player).equals(
                             new ZombieState(ZombieForm.NORMAL, ZombieSize.BABY)),
                     "starvation should evolve NORMAL/ADULT to NORMAL/BABY");
             assertInPlacePlayer(helper, level, player, playerId, "starvation");
@@ -165,18 +168,18 @@ final class IAmZombieFormGameTestBodies {
             observerRegistered = true;
 
             boolean damaged = player.hurtServer(level, level.damageSources().drown(), Float.MAX_VALUE);
-            helper.assertTrue(damaged, "drowning damage should be accepted by the connected player");
+            GameTestAssertions.assertTrue(helper, damaged, "drowning damage should be accepted by the connected player");
             assertCanceledDeath(helper, observer, "drowning");
-            helper.assertTrue(GameTestPlayers.stateOf(player).equals(
+            GameTestAssertions.assertTrue(helper, GameTestPlayers.stateOf(player).equals(
                             new ZombieState(ZombieForm.DROWNED, ZombieSize.ADULT)),
                     "drowning should evolve NORMAL/ADULT to DROWNED/ADULT");
             assertInPlacePlayer(helper, level, player, playerId, "drowning");
             assertEvolutionRecoveryAndRetention(helper, player, "drowning");
 
             PlayerZombieData data = player.getData(IAmZombieAttachments.PLAYER_ZOMBIE);
-            helper.assertTrue(data.receivedFirstDrownedReward(),
+            GameTestAssertions.assertTrue(helper, data.receivedFirstDrownedReward(),
                     "first drowning evolution should record the drowned reward claim");
-            helper.assertTrue(inventoryCount(player, Items.TRIDENT) == 1,
+            GameTestAssertions.assertTrue(helper, inventoryCount(player, Items.TRIDENT) == 1,
                     "first drowning evolution should grant exactly one trident");
         } finally {
             try {
@@ -272,9 +275,9 @@ final class IAmZombieFormGameTestBodies {
             channel = embeddedChannel(helper, player);
             prepareEvolutionFixture(player, initialData);
 
-            helper.assertFalse(hasAdvancement(player, outcomeAdvancement),
+            GameTestAssertions.assertFalse(helper, hasAdvancement(player, outcomeAdvancement),
                     label + " fixture must begin without its outcome advancement");
-            helper.assertFalse(hasAdvancement(player, IAmZombieAdvancements.FIRST_EVOLUTION),
+            GameTestAssertions.assertFalse(helper, hasAdvancement(player, IAmZombieAdvancements.FIRST_EVOLUTION),
                     label + " fixture must begin without FIRST_EVOLUTION");
 
             // Login and fixture writes are not part of the production death-handler count.
@@ -303,7 +306,7 @@ final class IAmZombieFormGameTestBodies {
                     Float.MAX_VALUE);
             List<Integer> payloadTargets = drainPlayerZombiePayloadTargets(channel);
 
-            helper.assertTrue(damaged, label + " must accept real lethal " + trigger + " damage");
+            GameTestAssertions.assertTrue(helper, damaged, label + " must accept real lethal " + trigger + " damage");
             assertEvolvePreSnapshot(
                     helper,
                     evolveObserver,
@@ -314,7 +317,7 @@ final class IAmZombieFormGameTestBodies {
                     afterState,
                     veto,
                     label);
-            helper.assertTrue(deathObserver.matchingDeathEvents == 1,
+            GameTestAssertions.assertTrue(helper, deathObserver.matchingDeathEvents == 1,
                     label + " must reach the matching outer LivingDeathEvent exactly once at LOWEST");
 
             if (veto) {
@@ -396,8 +399,8 @@ final class IAmZombieFormGameTestBodies {
             player.setInvulnerable(false);
             player.setHealth(7.0F);
             player.onUpdateAbilities();
-            helper.assertTrue(player.isCreative(), label + " fixture must report CREATIVE");
-            helper.assertTrue(hasExpectedFormAttributeValues(
+            GameTestAssertions.assertTrue(helper, player.isCreative(), label + " fixture must report CREATIVE");
+            GameTestAssertions.assertTrue(helper, hasExpectedFormAttributeValues(
                             helper, player, ZombieForm.NORMAL, ZombieSize.BABY),
                     label + " fixture must begin with NORMAL/BABY attributes");
 
@@ -417,13 +420,13 @@ final class IAmZombieFormGameTestBodies {
                     level, level.damageSources().playerAttack(player), Float.MAX_VALUE);
             List<Integer> payloadTargets = drainPlayerZombiePayloadTargets(channel);
 
-            helper.assertTrue(damaged, label + " must deal accepted lethal player-attack damage");
-            helper.assertFalse(giant.isAlive(), label + " must leave the vanilla giant genuinely dead");
-            helper.assertTrue(giant.getHealth() <= 0.0F,
+            GameTestAssertions.assertTrue(helper, damaged, label + " must deal accepted lethal player-attack damage");
+            GameTestAssertions.assertFalse(helper, giant.isAlive(), label + " must leave the vanilla giant genuinely dead");
+            GameTestAssertions.assertTrue(helper, giant.getHealth() <= 0.0F,
                     label + " must reduce the vanilla giant to zero health");
-            helper.assertTrue(deathObserver.matchingDeathEvents == 1,
+            GameTestAssertions.assertTrue(helper, deathObserver.matchingDeathEvents == 1,
                     label + " must publish exactly one giant LivingDeathEvent");
-            helper.assertFalse(deathObserver.lastDeathCanceled,
+            GameTestAssertions.assertFalse(helper, deathObserver.lastDeathCanceled,
                     label + " must not cancel the giant's real death");
 
             PlayerZombieData expectedAfter = initialData.withState(
@@ -437,18 +440,18 @@ final class IAmZombieFormGameTestBodies {
                     ZombieForm.GIANT,
                     initialData,
                     label);
-            helper.assertTrue(transformObserver.preCancellationApplied == veto,
+            GameTestAssertions.assertTrue(helper, transformObserver.preCancellationApplied == veto,
                     label + " Transform Pre cancellation flag must match the test listener");
 
             if (veto) {
-                helper.assertTrue(transformObserver.postCount == 0,
+                GameTestAssertions.assertTrue(helper, transformObserver.postCount == 0,
                         label + " must suppress Transform Post");
-                helper.assertTrue(player.getData(IAmZombieAttachments.PLAYER_ZOMBIE).equals(initialData),
+                GameTestAssertions.assertTrue(helper, player.getData(IAmZombieAttachments.PLAYER_ZOMBIE).equals(initialData),
                         label + " must preserve the complete state and reward flags");
-                helper.assertTrue(hasExpectedFormAttributeValues(
+                GameTestAssertions.assertTrue(helper, hasExpectedFormAttributeValues(
                                 helper, player, ZombieForm.NORMAL, ZombieSize.BABY),
                         label + " must preserve NORMAL/BABY attributes");
-                helper.assertTrue(Float.compare(player.getHealth(), 7.0F) == 0,
+                GameTestAssertions.assertTrue(helper, Float.compare(player.getHealth(), 7.0F) == 0,
                         label + " must not heal or otherwise change the killer's health");
                 assertStableEntityPayloadCount(
                         helper, payloadTargets, stableEntityId, 0, label);
@@ -464,21 +467,21 @@ final class IAmZombieFormGameTestBodies {
                         label);
                 // Post is deliberately before forced attributes and healing: the attachment is authoritative, while
                 // the old BABY attribute/health snapshot is still visible inside the callback.
-                helper.assertTrue(Math.abs(transformObserver.postScale - 0.5) <= ATTRIBUTE_EPSILON,
+                GameTestAssertions.assertTrue(helper, Math.abs(transformObserver.postScale - 0.5) <= ATTRIBUTE_EPSILON,
                         label + " Post must run before the GIANT/ADULT scale refresh");
-                helper.assertTrue(Float.compare(transformObserver.postMaxHealth, 20.0F) == 0,
+                GameTestAssertions.assertTrue(helper, Float.compare(transformObserver.postMaxHealth, 20.0F) == 0,
                         label + " Post must run before the GIANT max-health refresh");
-                helper.assertTrue(Float.compare(transformObserver.postHealth, 7.0F) == 0,
+                GameTestAssertions.assertTrue(helper, Float.compare(transformObserver.postHealth, 7.0F) == 0,
                         label + " Post must run before giant-kill healing");
 
-                helper.assertTrue(player.getData(IAmZombieAttachments.PLAYER_ZOMBIE).equals(expectedAfter),
+                GameTestAssertions.assertTrue(helper, player.getData(IAmZombieAttachments.PLAYER_ZOMBIE).equals(expectedAfter),
                         label + " must commit GIANT/ADULT once while preserving reward flags");
-                helper.assertTrue(hasExpectedFormAttributeValues(
+                GameTestAssertions.assertTrue(helper, hasExpectedFormAttributeValues(
                                 helper, player, ZombieForm.GIANT, ZombieSize.ADULT),
                         label + " must finish with GIANT/ADULT attributes");
-                helper.assertTrue(Float.compare(player.getMaxHealth(), 100.0F) == 0,
+                GameTestAssertions.assertTrue(helper, Float.compare(player.getMaxHealth(), 100.0F) == 0,
                         label + " must finish with 100 max health");
-                helper.assertTrue(Float.compare(player.getHealth(), 100.0F) == 0,
+                GameTestAssertions.assertTrue(helper, Float.compare(player.getHealth(), 100.0F) == 0,
                         label + " must heal to the refreshed GIANT max health");
                 assertStableEntityPayloadCount(
                         helper, payloadTargets, stableEntityId, 1, label);
@@ -555,17 +558,17 @@ final class IAmZombieFormGameTestBodies {
 
             boolean damaged = oldPlayer.hurtServer(
                     level, level.damageSources().genericKill(), Float.MAX_VALUE);
-            helper.assertTrue(damaged, label + " must accept lethal generic-kill damage");
-            helper.assertFalse(oldPlayer.isAlive(), label + " must genuinely kill the original player");
-            helper.assertTrue(oldPlayer.getHealth() <= 0.0F,
+            GameTestAssertions.assertTrue(helper, damaged, label + " must accept lethal generic-kill damage");
+            GameTestAssertions.assertFalse(helper, oldPlayer.isAlive(), label + " must genuinely kill the original player");
+            GameTestAssertions.assertTrue(helper, oldPlayer.getHealth() <= 0.0F,
                     label + " must reduce the original player to zero health");
-            helper.assertTrue(deathObserver.matchingDeathEvents == 1,
+            GameTestAssertions.assertTrue(helper, deathObserver.matchingDeathEvents == 1,
                     label + " must publish exactly one matching LivingDeathEvent");
-            helper.assertFalse(deathObserver.lastDeathCanceled,
+            GameTestAssertions.assertFalse(helper, deathObserver.lastDeathCanceled,
                     label + " must not cancel the original player's real death");
-            helper.assertTrue(deathStat(oldPlayer) == deathsBefore + 1,
+            GameTestAssertions.assertTrue(helper, deathStat(oldPlayer) == deathsBefore + 1,
                     label + " must increment the vanilla DEATHS stat exactly once");
-            helper.assertFalse(listener.hasClientLoaded(),
+            GameTestAssertions.assertFalse(helper, GameTestPlayers.hasClientLoaded(listener),
                     label + " must mark the connection client-unloaded at the death screen");
 
             listener.handleClientCommand(new ServerboundClientCommandPacket(
@@ -576,32 +579,32 @@ final class IAmZombieFormGameTestBodies {
 
             assertRealRespawnReplacement(
                     helper, level, playerId, oldPlayer, newPlayer, listener, label);
-            helper.assertTrue(finalEntityId == oldEntityId,
+            GameTestAssertions.assertTrue(helper, finalEntityId == oldEntityId,
                     label + " must restore the original entity ID after Clone");
-            helper.assertTrue(transformObserver.preEntityId != finalEntityId,
+            GameTestAssertions.assertTrue(helper, transformObserver.preEntityId != finalEntityId,
                     label + " must observe a distinct temporary entity ID in Transform Pre");
-            helper.assertTrue(transformObserver.prePlayer == newPlayer,
+            GameTestAssertions.assertTrue(helper, transformObserver.prePlayer == newPlayer,
                     label + " Transform Pre must expose the fresh respawn holder");
-            helper.assertFalse(transformObserver.preAttachmentRead,
+            GameTestAssertions.assertFalse(helper, transformObserver.preAttachmentRead,
                     label + " Transform Pre listener must not read the fresh-holder attachment");
-            helper.assertTrue(transformObserver.preCount == 1,
+            GameTestAssertions.assertTrue(helper, transformObserver.preCount == 1,
                     label + " must publish Transform Pre exactly once");
-            helper.assertTrue(transformObserver.preFrom == ZombieForm.ZOMBIFIED_PIGLIN
+            GameTestAssertions.assertTrue(helper, transformObserver.preFrom == ZombieForm.ZOMBIFIED_PIGLIN
                             && transformObserver.preTo == ZombieForm.NORMAL,
                     label + " Transform Pre must carry the authoritative ZOMBIFIED_PIGLIN -> NORMAL snapshot");
-            helper.assertTrue(transformObserver.preCancellationApplied == veto,
+            GameTestAssertions.assertTrue(helper, transformObserver.preCancellationApplied == veto,
                     label + " Transform Pre cancellation flag must match the test listener");
 
             PlayerZombieData expectedReset = initialData.resetStateForOrdinaryDeath();
             if (veto) {
-                helper.assertTrue(transformObserver.postCount == 0,
+                GameTestAssertions.assertTrue(helper, transformObserver.postCount == 0,
                         label + " must suppress Transform Post");
-                helper.assertTrue(newPlayer.getData(IAmZombieAttachments.PLAYER_ZOMBIE).equals(initialData),
+                GameTestAssertions.assertTrue(helper, newPlayer.getData(IAmZombieAttachments.PLAYER_ZOMBIE).equals(initialData),
                         label + " must copy the complete previous state, size, and flags to the fresh holder");
-                helper.assertTrue(hasExpectedFormAttributeValues(
+                GameTestAssertions.assertTrue(helper, hasExpectedFormAttributeValues(
                                 helper, newPlayer, ZombieForm.ZOMBIFIED_PIGLIN, ZombieSize.BABY),
                         label + " must force retained ZOMBIFIED_PIGLIN/BABY attributes");
-                helper.assertTrue(newPlayer.hasEffect(MobEffects.FIRE_RESISTANCE),
+                GameTestAssertions.assertTrue(helper, newPlayer.hasEffect(MobEffects.FIRE_RESISTANCE),
                         label + " must reapply retained ZOMBIFIED_PIGLIN passive abilities");
             } else {
                 assertTransformPostSnapshot(
@@ -613,14 +616,14 @@ final class IAmZombieFormGameTestBodies {
                         ZombieForm.NORMAL,
                         expectedReset,
                         label);
-                helper.assertTrue(transformObserver.postPlayer == newPlayer,
+                GameTestAssertions.assertTrue(helper, transformObserver.postPlayer == newPlayer,
                         label + " Transform Post must expose the same fresh respawn holder");
-                helper.assertTrue(newPlayer.getData(IAmZombieAttachments.PLAYER_ZOMBIE).equals(expectedReset),
+                GameTestAssertions.assertTrue(helper, newPlayer.getData(IAmZombieAttachments.PLAYER_ZOMBIE).equals(expectedReset),
                         label + " must reset to NORMAL/ADULT while preserving all reward flags");
-                helper.assertTrue(hasExpectedFormAttributeValues(
+                GameTestAssertions.assertTrue(helper, hasExpectedFormAttributeValues(
                                 helper, newPlayer, ZombieForm.NORMAL, ZombieSize.ADULT),
                         label + " must force reset NORMAL/ADULT attributes");
-                helper.assertFalse(newPlayer.hasEffect(MobEffects.FIRE_RESISTANCE),
+                GameTestAssertions.assertFalse(helper, newPlayer.hasEffect(MobEffects.FIRE_RESISTANCE),
                         label + " must not retain the old ZOMBIFIED_PIGLIN passive ability");
             }
 
@@ -631,10 +634,10 @@ final class IAmZombieFormGameTestBodies {
                     finalEntityId,
                     label);
 
-            helper.assertFalse(listener.hasClientLoaded(),
+            GameTestAssertions.assertFalse(helper, GameTestPlayers.hasClientLoaded(listener),
                     label + " mock connection must await the respawn PlayerLoaded handshake");
             listener.handleAcceptPlayerLoad(new ServerboundPlayerLoadedPacket());
-            helper.assertTrue(listener.hasClientLoaded(),
+            GameTestAssertions.assertTrue(helper, GameTestPlayers.hasClientLoaded(listener),
                     label + " test-side PlayerLoaded must complete the respawn handshake");
         } finally {
             try {
@@ -683,16 +686,16 @@ final class IAmZombieFormGameTestBodies {
         GameTestSeams.killByPlayerAttack(level, player, giant);
 
         if (GameTestPlayers.stateOf(player).form() != ZombieForm.GIANT) {
-            helper.fail("a creative player killing a vanilla giant must transform into the GIANT form");
+            GameTestAssertions.fail(helper, "a creative player killing a vanilla giant must transform into the GIANT form");
             return;
         }
         // ATTR-007 (runtime): the forced refresh applied the +80 GIANT max-health modifier, and the handler healed to full.
         if (player.getMaxHealth() != 100.0F) {
-            helper.fail("GIANT form max health should be 100 after the transform, was " + player.getMaxHealth());
+            GameTestAssertions.fail(helper, "GIANT form max health should be 100 after the transform, was " + player.getMaxHealth());
             return;
         }
         if (player.getHealth() != player.getMaxHealth()) {
-            helper.fail("a giant-kill transform must respawn the player at full health");
+            GameTestAssertions.fail(helper, "a giant-kill transform must respawn the player at full health");
             return;
         }
         if (!hasExpectedFormAttributeValues(helper, player, ZombieForm.GIANT, ZombieSize.ADULT)) {
@@ -731,7 +734,7 @@ final class IAmZombieFormGameTestBodies {
                     // LivingEntity tick path, where vanilla detects the equipment change and applies its modifiers.
                     player.doTick();
                     if (!player.getMainHandItem().is(Items.DIAMOND_SWORD)) {
-                        helper.fail("the FakePlayer should actually hold the diamond sword");
+                        GameTestAssertions.fail(helper, "the FakePlayer should actually hold the diamond sword");
                         return;
                     }
                     if (!hasExpectedAttackProfile(helper, player, 13.5, true, false, true, true)) {
@@ -742,7 +745,7 @@ final class IAmZombieFormGameTestBodies {
                 .thenExecuteAfter(1, () -> {
                     player.doTick();
                     if (!player.getMainHandItem().isEmpty()) {
-                        helper.fail("the FakePlayer main hand should be empty after removing the diamond sword");
+                        GameTestAssertions.fail(helper, "the FakePlayer main hand should be empty after removing the diamond sword");
                         return;
                     }
                     if (!hasExpectedAttackProfile(helper, player, 4.5, true, false, true)) {
@@ -763,28 +766,28 @@ final class IAmZombieFormGameTestBodies {
             ZombieState afterState,
             boolean veto,
             String label) {
-        helper.assertTrue(observer.preCount == 1,
+        GameTestAssertions.assertTrue(helper, observer.preCount == 1,
                 label + " must publish Evolve Pre exactly once");
-        helper.assertTrue(observer.prePlayer == player && observer.preEntityId == player.getId(),
+        GameTestAssertions.assertTrue(helper, observer.prePlayer == player && observer.preEntityId == player.getId(),
                 label + " Evolve Pre must expose the live connected player");
-        helper.assertTrue(observer.preBefore.equals(beforeState)
+        GameTestAssertions.assertTrue(helper, observer.preBefore.equals(beforeState)
                         && observer.preAfter.equals(afterState)
                         && observer.preOutcome == expectedOutcome,
                 label + " Evolve Pre must carry the resolved before/after/outcome snapshot");
-        helper.assertTrue(observer.preCancellationApplied == veto,
+        GameTestAssertions.assertTrue(helper, observer.preCancellationApplied == veto,
                 label + " Evolve Pre cancellation flag must match the test listener");
-        helper.assertTrue(initialData.equals(observer.preData),
+        GameTestAssertions.assertTrue(helper, initialData.equals(observer.preData),
                 label + " Evolve Pre must run before any state or reward-flag write");
-        helper.assertTrue(observer.preTridents == 0,
+        GameTestAssertions.assertTrue(helper, observer.preTridents == 0,
                 label + " Evolve Pre must run before any item reward");
-        helper.assertFalse(observer.preOutcomeAdvancement,
+        GameTestAssertions.assertFalse(helper, observer.preOutcomeAdvancement,
                 label + " Evolve Pre must run before the outcome advancement");
-        helper.assertFalse(observer.preFirstEvolutionAdvancement,
+        GameTestAssertions.assertFalse(helper, observer.preFirstEvolutionAdvancement,
                 label + " Evolve Pre must run before FIRST_EVOLUTION");
-        helper.assertTrue(Math.abs(observer.preScale - 1.0) <= ATTRIBUTE_EPSILON
+        GameTestAssertions.assertTrue(helper, Math.abs(observer.preScale - 1.0) <= ATTRIBUTE_EPSILON
                         && Math.abs(observer.preSubmergedMiningSpeed - 0.2) <= ATTRIBUTE_EPSILON,
                 label + " Evolve Pre must observe the old NORMAL/ADULT attributes");
-        helper.assertTrue(observer.preHealth <= 0.0F
+        GameTestAssertions.assertTrue(helper, observer.preHealth <= 0.0F
                         && observer.preAirSupply == 1
                         && observer.preFoodLevel == 2
                         && Float.compare(observer.preSaturation, 1.0F) == 0
@@ -805,29 +808,29 @@ final class IAmZombieFormGameTestBodies {
             EvolveObserver evolveObserver,
             EvolveDeathObserver deathObserver,
             String label) {
-        helper.assertFalse(deathObserver.lastDeathCanceled,
+        GameTestAssertions.assertFalse(helper, deathObserver.lastDeathCanceled,
                 label + " must leave the real outer death uncanceled at LOWEST");
-        helper.assertTrue(evolveObserver.callbackOrder.equals(List.of("pre", "death-lowest")),
+        GameTestAssertions.assertTrue(helper, evolveObserver.callbackOrder.equals(List.of("pre", "death-lowest")),
                 label + " callback order must be Pre -> death LOWEST with no Post");
-        helper.assertTrue(evolveObserver.postCount == 0,
+        GameTestAssertions.assertTrue(helper, evolveObserver.postCount == 0,
                 label + " must suppress Evolve Post");
-        helper.assertTrue(evolveObserver.outcomeAdvancementCount == 0,
+        GameTestAssertions.assertTrue(helper, evolveObserver.outcomeAdvancementCount == 0,
                 label + " must not reach the outcome advancement callback");
 
-        helper.assertTrue(initialData.equals(deathObserver.dataAtLowest),
+        GameTestAssertions.assertTrue(helper, initialData.equals(deathObserver.dataAtLowest),
                 label + " must retain the complete old state and flags at LOWEST");
-        helper.assertTrue(deathObserver.tridentsAtLowest == 0,
+        GameTestAssertions.assertTrue(helper, deathObserver.tridentsAtLowest == 0,
                 label + " must grant no reward before real death continues");
-        helper.assertFalse(deathObserver.outcomeAdvancementAtLowest,
+        GameTestAssertions.assertFalse(helper, deathObserver.outcomeAdvancementAtLowest,
                 label + " must grant no outcome advancement");
-        helper.assertFalse(deathObserver.firstEvolutionAdvancementAtLowest,
+        GameTestAssertions.assertFalse(helper, deathObserver.firstEvolutionAdvancementAtLowest,
                 label + " must grant no FIRST_EVOLUTION advancement");
-        helper.assertTrue(deathObserver.postCountAtLowest == 0,
+        GameTestAssertions.assertTrue(helper, deathObserver.postCountAtLowest == 0,
                 label + " must have no Post callback at LOWEST");
-        helper.assertTrue(Math.abs(deathObserver.scaleAtLowest - 1.0) <= ATTRIBUTE_EPSILON
+        GameTestAssertions.assertTrue(helper, Math.abs(deathObserver.scaleAtLowest - 1.0) <= ATTRIBUTE_EPSILON
                         && Math.abs(deathObserver.submergedMiningSpeedAtLowest - 0.2) <= ATTRIBUTE_EPSILON,
                 label + " must leave the old attributes untouched");
-        helper.assertTrue(deathObserver.healthAtLowest <= 0.0F
+        GameTestAssertions.assertTrue(helper, deathObserver.healthAtLowest <= 0.0F
                         && deathObserver.airSupplyAtLowest == 1
                         && deathObserver.foodLevelAtLowest == 2
                         && Float.compare(deathObserver.saturationAtLowest, 1.0F) == 0
@@ -835,21 +838,21 @@ final class IAmZombieFormGameTestBodies {
                         && deathObserver.fireTicksAtLowest == 80,
                 label + " must perform no recovery before real death continues");
 
-        helper.assertFalse(player.isAlive(),
+        GameTestAssertions.assertFalse(helper, player.isAlive(),
                 label + " must leave the player genuinely dead");
-        helper.assertTrue(player.getHealth() <= 0.0F,
+        GameTestAssertions.assertTrue(helper, player.getHealth() <= 0.0F,
                 label + " must leave the player at zero health");
-        helper.assertTrue(deathStat(player) == deathsBefore + 1,
+        GameTestAssertions.assertTrue(helper, deathStat(player) == deathsBefore + 1,
                 label + " must increment the vanilla DEATHS stat exactly once");
-        helper.assertFalse(listener.hasClientLoaded(),
+        GameTestAssertions.assertFalse(helper, GameTestPlayers.hasClientLoaded(listener),
                 label + " must put the connection into the death-screen unloaded state");
-        helper.assertTrue(player.getData(IAmZombieAttachments.PLAYER_ZOMBIE).equals(initialData),
+        GameTestAssertions.assertTrue(helper, player.getData(IAmZombieAttachments.PLAYER_ZOMBIE).equals(initialData),
                 label + " must perform no state or reward-flag write");
-        helper.assertTrue(inventoryCount(player, Items.TRIDENT) == 0,
+        GameTestAssertions.assertTrue(helper, inventoryCount(player, Items.TRIDENT) == 0,
                 label + " must leave no trident reward");
-        helper.assertFalse(hasAdvancement(player, outcomeAdvancement),
+        GameTestAssertions.assertFalse(helper, hasAdvancement(player, outcomeAdvancement),
                 label + " must leave the outcome advancement incomplete");
-        helper.assertFalse(hasAdvancement(player, IAmZombieAdvancements.FIRST_EVOLUTION),
+        GameTestAssertions.assertFalse(helper, hasAdvancement(player, IAmZombieAdvancements.FIRST_EVOLUTION),
                 label + " must leave FIRST_EVOLUTION incomplete");
         assertStableEntityPayloadCount(helper, payloadTargets, stableEntityId, 0, label);
     }
@@ -871,34 +874,34 @@ final class IAmZombieFormGameTestBodies {
             EvolveDeathObserver deathObserver,
             String label) {
         int expectedTridents = drowning ? 1 : 0;
-        helper.assertTrue(deathObserver.lastDeathCanceled,
+        GameTestAssertions.assertTrue(helper, deathObserver.lastDeathCanceled,
                 label + " must finally cancel the outer death at LOWEST");
-        helper.assertTrue(evolveObserver.callbackOrder.equals(List.of("pre", "post", "death-lowest")),
+        GameTestAssertions.assertTrue(helper, evolveObserver.callbackOrder.equals(List.of("pre", "post", "death-lowest")),
                 label + " callback order must be Pre -> Post -> death LOWEST");
 
-        helper.assertTrue(evolveObserver.postCount == 1,
+        GameTestAssertions.assertTrue(helper, evolveObserver.postCount == 1,
                 label + " must publish Evolve Post exactly once");
-        helper.assertTrue(evolveObserver.postPlayer == player
+        GameTestAssertions.assertTrue(helper, evolveObserver.postPlayer == player
                         && evolveObserver.postEntityId == stableEntityId,
                 label + " Evolve Post must expose the same in-place player");
-        helper.assertTrue(evolveObserver.postBefore.equals(initialData.state())
+        GameTestAssertions.assertTrue(helper, evolveObserver.postBefore.equals(initialData.state())
                         && evolveObserver.postAfter.equals(expectedData.state())
                         && evolveObserver.postOutcome == (drowning
                                 ? DeathOutcome.EVOLVE_TO_DROWNED
                                 : DeathOutcome.EVOLVE_TO_BABY),
                 label + " Evolve Post must carry the resolved snapshot");
-        helper.assertTrue(expectedData.equals(evolveObserver.postData),
+        GameTestAssertions.assertTrue(helper, expectedData.equals(evolveObserver.postData),
                 label + " Post must observe the single committed state-and-flags value");
-        helper.assertTrue(evolveObserver.postTridents == expectedTridents,
+        GameTestAssertions.assertTrue(helper, evolveObserver.postTridents == expectedTridents,
                 label + " reward must be complete before Post");
-        helper.assertFalse(evolveObserver.postOutcomeAdvancement,
+        GameTestAssertions.assertFalse(helper, evolveObserver.postOutcomeAdvancement,
                 label + " Post must run before the outcome advancement");
-        helper.assertFalse(evolveObserver.postFirstEvolutionAdvancement,
+        GameTestAssertions.assertFalse(helper, evolveObserver.postFirstEvolutionAdvancement,
                 label + " Post must run before FIRST_EVOLUTION");
-        helper.assertTrue(Math.abs(evolveObserver.postScale - 1.0) <= ATTRIBUTE_EPSILON
+        GameTestAssertions.assertTrue(helper, Math.abs(evolveObserver.postScale - 1.0) <= ATTRIBUTE_EPSILON
                         && Math.abs(evolveObserver.postSubmergedMiningSpeed - 0.2) <= ATTRIBUTE_EPSILON,
                 label + " Post must run before forced attribute refresh");
-        helper.assertTrue(evolveObserver.postHealth <= 0.0F
+        GameTestAssertions.assertTrue(helper, evolveObserver.postHealth <= 0.0F
                         && evolveObserver.postAirSupply == 1
                         && evolveObserver.postFoodLevel == 2
                         && Float.compare(evolveObserver.postSaturation, 1.0F) == 0
@@ -906,32 +909,32 @@ final class IAmZombieFormGameTestBodies {
                         && evolveObserver.postFireTicks == 80,
                 label + " Post must run before passive/recovery side effects");
 
-        helper.assertTrue(evolveObserver.outcomeAdvancementCount == 1,
+        GameTestAssertions.assertTrue(helper, evolveObserver.outcomeAdvancementCount == 1,
                 label + " must earn its outcome advancement exactly once");
-        helper.assertTrue(evolveObserver.postCountAtOutcomeAdvancement == 1,
+        GameTestAssertions.assertTrue(helper, evolveObserver.postCountAtOutcomeAdvancement == 1,
                 label + " outcome advancement must run after Post");
-        helper.assertTrue(expectedData.equals(evolveObserver.dataAtOutcomeAdvancement),
+        GameTestAssertions.assertTrue(helper, expectedData.equals(evolveObserver.dataAtOutcomeAdvancement),
                 label + " outcome advancement must observe the committed data");
-        helper.assertTrue(evolveObserver.tridentsAtOutcomeAdvancement == expectedTridents,
+        GameTestAssertions.assertTrue(helper, evolveObserver.tridentsAtOutcomeAdvancement == expectedTridents,
                 label + " outcome advancement must observe the completed reward");
-        helper.assertTrue(evolveObserver.outcomeAdvancementDoneInCallback,
+        GameTestAssertions.assertTrue(helper, evolveObserver.outcomeAdvancementDoneInCallback,
                 label + " outcome advancement callback must observe completed progress");
         if (drowning) {
-            helper.assertTrue(Math.abs(evolveObserver.scaleAtOutcomeAdvancement - 1.0) <= ATTRIBUTE_EPSILON
+            GameTestAssertions.assertTrue(helper, Math.abs(evolveObserver.scaleAtOutcomeAdvancement - 1.0) <= ATTRIBUTE_EPSILON
                             && Math.abs(evolveObserver.submergedMiningSpeedAtOutcomeAdvancement - 1.0)
                                     <= ATTRIBUTE_EPSILON,
                     label + " outcome advancement must run after DROWNED attributes");
-            helper.assertTrue(evolveObserver.airSupplyAtOutcomeAdvancement == player.getMaxAirSupply(),
+            GameTestAssertions.assertTrue(helper, evolveObserver.airSupplyAtOutcomeAdvancement == player.getMaxAirSupply(),
                     label + " outcome advancement must run after DROWNED passive air restoration");
         } else {
-            helper.assertTrue(Math.abs(evolveObserver.scaleAtOutcomeAdvancement - 0.5) <= ATTRIBUTE_EPSILON
+            GameTestAssertions.assertTrue(helper, Math.abs(evolveObserver.scaleAtOutcomeAdvancement - 0.5) <= ATTRIBUTE_EPSILON
                             && Math.abs(evolveObserver.submergedMiningSpeedAtOutcomeAdvancement - 0.2)
                                     <= ATTRIBUTE_EPSILON,
                     label + " outcome advancement must run after BABY attributes");
-            helper.assertTrue(evolveObserver.airSupplyAtOutcomeAdvancement == 1,
+            GameTestAssertions.assertTrue(helper, evolveObserver.airSupplyAtOutcomeAdvancement == 1,
                     label + " BABY evolution has no pre-advancement passive air side effect");
         }
-        helper.assertTrue(evolveObserver.healthAtOutcomeAdvancement <= 0.0F
+        GameTestAssertions.assertTrue(helper, evolveObserver.healthAtOutcomeAdvancement <= 0.0F
                         && evolveObserver.foodLevelAtOutcomeAdvancement == 2
                         && Float.compare(evolveObserver.saturationAtOutcomeAdvancement, 1.0F) == 0
                         && Math.abs(evolveObserver.fallDistanceAtOutcomeAdvancement - 7.0)
@@ -939,17 +942,17 @@ final class IAmZombieFormGameTestBodies {
                         && evolveObserver.fireTicksAtOutcomeAdvancement == 80,
                 label + " outcome advancement must run before recovery");
 
-        helper.assertTrue(expectedData.equals(deathObserver.dataAtLowest),
+        GameTestAssertions.assertTrue(helper, expectedData.equals(deathObserver.dataAtLowest),
                 label + " LOWEST must observe the committed state and flags");
-        helper.assertTrue(deathObserver.tridentsAtLowest == expectedTridents,
+        GameTestAssertions.assertTrue(helper, deathObserver.tridentsAtLowest == expectedTridents,
                 label + " LOWEST must observe the completed reward exactly once");
-        helper.assertTrue(deathObserver.outcomeAdvancementAtLowest,
+        GameTestAssertions.assertTrue(helper, deathObserver.outcomeAdvancementAtLowest,
                 label + " LOWEST must observe the outcome advancement");
-        helper.assertTrue(deathObserver.firstEvolutionAdvancementAtLowest == drowning,
+        GameTestAssertions.assertTrue(helper, deathObserver.firstEvolutionAdvancementAtLowest == drowning,
                 label + " FIRST_EVOLUTION must match the real form-change outcome");
-        helper.assertTrue(deathObserver.postCountAtLowest == 1,
+        GameTestAssertions.assertTrue(helper, deathObserver.postCountAtLowest == 1,
                 label + " LOWEST must observe exactly one completed Post");
-        helper.assertTrue(deathObserver.healthAtLowest > 0.0F
+        GameTestAssertions.assertTrue(helper, deathObserver.healthAtLowest > 0.0F
                         && deathObserver.airSupplyAtLowest == player.getMaxAirSupply()
                         && deathObserver.foodLevelAtLowest == 6
                         && Float.compare(deathObserver.saturationAtLowest, 0.0F) == 0
@@ -957,21 +960,21 @@ final class IAmZombieFormGameTestBodies {
                         && deathObserver.fireTicksAtLowest <= 0,
                 label + " LOWEST must observe recovery after advancements");
 
-        helper.assertTrue(player.isAlive(),
+        GameTestAssertions.assertTrue(helper, player.isAlive(),
                 label + " accepted evolution must keep the same player alive");
-        helper.assertTrue(deathStat(player) == deathsBefore,
+        GameTestAssertions.assertTrue(helper, deathStat(player) == deathsBefore,
                 label + " accepted evolution must not increment DEATHS");
-        helper.assertTrue(listener.hasClientLoaded(),
+        GameTestAssertions.assertTrue(helper, GameTestPlayers.hasClientLoaded(listener),
                 label + " accepted evolution must not unload the connection");
-        helper.assertTrue(player.getData(IAmZombieAttachments.PLAYER_ZOMBIE).equals(expectedData),
+        GameTestAssertions.assertTrue(helper, player.getData(IAmZombieAttachments.PLAYER_ZOMBIE).equals(expectedData),
                 label + " must commit the exact expected state and reward flags");
-        helper.assertTrue(inventoryCount(player, Items.TRIDENT) == expectedTridents,
+        GameTestAssertions.assertTrue(helper, inventoryCount(player, Items.TRIDENT) == expectedTridents,
                 label + " must finish with exactly " + expectedTridents + " trident(s)");
-        helper.assertTrue(hasAdvancement(player, outcomeAdvancement),
+        GameTestAssertions.assertTrue(helper, hasAdvancement(player, outcomeAdvancement),
                 label + " must finish with its outcome advancement");
-        helper.assertTrue(hasAdvancement(player, IAmZombieAdvancements.FIRST_EVOLUTION) == drowning,
+        GameTestAssertions.assertTrue(helper, hasAdvancement(player, IAmZombieAdvancements.FIRST_EVOLUTION) == drowning,
                 label + " FIRST_EVOLUTION completion must match the form-changing outcome");
-        helper.assertTrue(hasExpectedFormAttributeValues(
+        GameTestAssertions.assertTrue(helper, hasExpectedFormAttributeValues(
                         helper, player, expectedData.state().form(), expectedData.state().size()),
                 label + " must finish with refreshed evolved attributes");
         assertInPlacePlayer(helper, level, player, playerId, label);
@@ -979,7 +982,7 @@ final class IAmZombieFormGameTestBodies {
         assertStableEntityPayloadCount(helper, payloadTargets, stableEntityId, 1, label);
 
         if (!drowning) {
-            helper.assertTrue(expectedData.receivedFirstDrownedReward()
+            GameTestAssertions.assertTrue(helper, expectedData.receivedFirstDrownedReward()
                             == initialData.receivedFirstDrownedReward()
                             && expectedData.receivedFirstHuskReward()
                                     == initialData.receivedFirstHuskReward()
@@ -1024,10 +1027,10 @@ final class IAmZombieFormGameTestBodies {
     }
 
     private static void assertCanceledDeath(GameTestHelper helper, DeathObserver observer, String label) {
-        helper.assertTrue(observer.matchingDeathEvents == 1,
+        GameTestAssertions.assertTrue(helper, observer.matchingDeathEvents == 1,
                 label + " should publish exactly one matching LivingDeathEvent, observed "
                         + observer.matchingDeathEvents);
-        helper.assertTrue(observer.lastDeathCanceled,
+        GameTestAssertions.assertTrue(helper, observer.lastDeathCanceled,
                 label + " LivingDeathEvent should be finally canceled at LOWEST priority");
     }
 
@@ -1037,13 +1040,13 @@ final class IAmZombieFormGameTestBodies {
             ServerPlayer player,
             UUID playerId,
             String label) {
-        helper.assertTrue(player.isAlive(), label + " evolution should leave the same player alive");
-        helper.assertFalse(player.isRemoved(), label + " evolution should not remove the player entity");
-        helper.assertTrue(level.getServer().getPlayerList().getPlayersByUUID().get(playerId) == player,
+        GameTestAssertions.assertTrue(helper, player.isAlive(), label + " evolution should leave the same player alive");
+        GameTestAssertions.assertFalse(helper, player.isRemoved(), label + " evolution should not remove the player entity");
+        GameTestAssertions.assertTrue(helper, level.getServer().getPlayerList().getPlayer(playerId) == player,
                 label + " evolution should retain the same instance in the PlayerList UUID map");
-        helper.assertTrue(level.players().stream().filter(candidate -> playerId.equals(candidate.getUUID())).count() == 1,
+        GameTestAssertions.assertTrue(helper, level.players().stream().filter(candidate -> playerId.equals(candidate.getUUID())).count() == 1,
                 label + " evolution should leave exactly one same-UUID player in ServerLevel.players");
-        helper.assertTrue(level.players().stream().anyMatch(candidate -> candidate == player),
+        GameTestAssertions.assertTrue(helper, level.players().stream().anyMatch(candidate -> candidate == player),
                 label + " evolution should retain the same instance in ServerLevel.players");
     }
 
@@ -1052,27 +1055,27 @@ final class IAmZombieFormGameTestBodies {
             ServerPlayer player,
             String label) {
         float expectedHealth = Math.max(1.0F, player.getMaxHealth() * 0.5F);
-        helper.assertTrue(Math.abs(player.getHealth() - expectedHealth) <= 0.001F,
+        GameTestAssertions.assertTrue(helper, Math.abs(player.getHealth() - expectedHealth) <= 0.001F,
                 label + " evolution should restore half max health");
-        helper.assertTrue(player.getAirSupply() == player.getMaxAirSupply(),
+        GameTestAssertions.assertTrue(helper, player.getAirSupply() == player.getMaxAirSupply(),
                 label + " evolution should restore full air");
-        helper.assertTrue(player.getFoodData().getFoodLevel() >= 6,
+        GameTestAssertions.assertTrue(helper, player.getFoodData().getFoodLevel() >= 6,
                 label + " evolution should restore at least six food points");
-        helper.assertTrue(Float.compare(player.getFoodData().getSaturationLevel(), 0.0F) == 0,
+        GameTestAssertions.assertTrue(helper, Float.compare(player.getFoodData().getSaturationLevel(), 0.0F) == 0,
                 label + " evolution should reset saturation to zero");
-        helper.assertTrue(Math.abs(player.fallDistance) <= ATTRIBUTE_EPSILON,
+        GameTestAssertions.assertTrue(helper, Math.abs(player.fallDistance) <= ATTRIBUTE_EPSILON,
                 label + " evolution should reset fall distance");
-        helper.assertTrue(player.getRemainingFireTicks() <= 0,
+        GameTestAssertions.assertTrue(helper, player.getRemainingFireTicks() <= 0,
                 label + " evolution should clear fire");
 
         ItemStack marker = player.getInventory().getItem(9);
-        helper.assertTrue(marker.is(Items.DIAMOND) && marker.getCount() == 3,
+        GameTestAssertions.assertTrue(helper, marker.is(Items.DIAMOND) && marker.getCount() == 3,
                 label + " evolution should retain DIAMOND x3 in inventory slot 9");
-        helper.assertTrue(player.experienceLevel == 7,
+        GameTestAssertions.assertTrue(helper, player.experienceLevel == 7,
                 label + " evolution should retain experience level 7");
-        helper.assertTrue(Float.compare(player.experienceProgress, 0.25F) == 0,
+        GameTestAssertions.assertTrue(helper, Float.compare(player.experienceProgress, 0.25F) == 0,
                 label + " evolution should retain experience progress 0.25");
-        helper.assertTrue(player.totalExperience == 123,
+        GameTestAssertions.assertTrue(helper, player.totalExperience == 123,
                 label + " evolution should retain total experience 123");
     }
 
@@ -1103,7 +1106,7 @@ final class IAmZombieFormGameTestBodies {
 
                 ZombieState actualState = GameTestPlayers.stateOf(player);
                 if (actualState.form() != form || actualState.size() != size) {
-                    helper.fail("expected attack-profile state " + form + "/" + size + ", was " + actualState);
+                    GameTestAssertions.fail(helper, "expected attack-profile state " + form + "/" + size + ", was " + actualState);
                     return;
                 }
                 if (!hasExpectedFormAttributeValues(helper, player, form, size)
@@ -1148,11 +1151,11 @@ final class IAmZombieFormGameTestBodies {
             ZombieForm form,
             ZombieSize size) {
         if (attribute == null) {
-            helper.fail("FakePlayer is missing the " + name + " attribute");
+            GameTestAssertions.fail(helper, "FakePlayer is missing the " + name + " attribute");
             return false;
         }
         if (Math.abs(attribute.getValue() - expectedValue) > ATTRIBUTE_EPSILON) {
-            helper.fail(form + "/" + size + " " + name + " expected " + expectedValue
+            GameTestAssertions.fail(helper, form + "/" + size + " " + name + " expected " + expectedValue
                     + ", was " + attribute.getValue());
             return false;
         }
@@ -1180,16 +1183,16 @@ final class IAmZombieFormGameTestBodies {
             boolean expectDiamondSword) {
         AttributeInstance attackDamage = player.getAttribute(Attributes.ATTACK_DAMAGE);
         if (attackDamage == null) {
-            helper.fail("FakePlayer is missing the ATTACK_DAMAGE attribute");
+            GameTestAssertions.fail(helper, "FakePlayer is missing the ATTACK_DAMAGE attribute");
             return false;
         }
         if (Math.abs(attackDamage.getBaseValue() - 1.0) > 1.0e-9) {
-            helper.fail("form refresh must preserve the player's attack base at 1.0, was "
+            GameTestAssertions.fail(helper, "form refresh must preserve the player's attack base at 1.0, was "
                     + attackDamage.getBaseValue());
             return false;
         }
         if (Math.abs(attackDamage.getValue() - expectedValue) > 1.0e-9) {
-            helper.fail("unexpected attack damage: expected " + expectedValue + ", was " + attackDamage.getValue());
+            GameTestAssertions.fail(helper, "unexpected attack damage: expected " + expectedValue + ", was " + attackDamage.getValue());
             return false;
         }
         if (!hasExpectedModifier(helper, attackDamage, NON_GIANT_ATTACK_DAMAGE_ID, expectNonGiant,
@@ -1210,13 +1213,13 @@ final class IAmZombieFormGameTestBodies {
                 .count();
         long expectedModifierCount = (expectNonGiant ? 1 : 0) + (expectGiant ? 1 : 0) + (expectDifficulty ? 1 : 0);
         if (ownedModifierCount != expectedModifierCount) {
-            helper.fail("attack modifiers duplicated or retained across form transition: expected "
+            GameTestAssertions.fail(helper, "attack modifiers duplicated or retained across form transition: expected "
                     + expectedModifierCount + ", was " + ownedModifierCount);
             return false;
         }
         long expectedTotalModifierCount = expectedModifierCount + (expectDiamondSword ? 1 : 0);
         if (attackDamage.getModifiers().size() != expectedTotalModifierCount) {
-            helper.fail("unexpected total attack modifier count: expected "
+            GameTestAssertions.fail(helper, "unexpected total attack modifier count: expected "
                     + expectedTotalModifierCount + ", was " + attackDamage.getModifiers().size());
             return false;
         }
@@ -1233,17 +1236,17 @@ final class IAmZombieFormGameTestBodies {
         AttributeModifier modifier = attribute.getModifier(id);
         if (!expected) {
             if (modifier != null) {
-                helper.fail("unexpected residual attack modifier " + id);
+                GameTestAssertions.fail(helper, "unexpected residual attack modifier " + id);
                 return false;
             }
             return true;
         }
         if (modifier == null) {
-            helper.fail("missing attack modifier " + id);
+            GameTestAssertions.fail(helper, "missing attack modifier " + id);
             return false;
         }
         if (Math.abs(modifier.amount() - expectedAmount) > 1.0e-9 || modifier.operation() != expectedOperation) {
-            helper.fail("attack modifier " + id + " had amount/operation "
+            GameTestAssertions.fail(helper, "attack modifier " + id + " had amount/operation "
                     + modifier.amount() + "/" + modifier.operation());
             return false;
         }
@@ -1260,8 +1263,8 @@ final class IAmZombieFormGameTestBodies {
 
     private static EmbeddedChannel embeddedChannel(GameTestHelper helper, ServerPlayer player) {
         Channel rawChannel = player.connection.getConnection().channel();
-        helper.assertTrue(rawChannel instanceof EmbeddedChannel,
-                "connected S1 GameTest player must use an EmbeddedChannel");
+        GameTestAssertions.assertTrue(helper, rawChannel instanceof EmbeddedChannel,
+                "connected GameTest player must use an EmbeddedChannel");
         return (EmbeddedChannel) rawChannel;
     }
 
@@ -1278,23 +1281,23 @@ final class IAmZombieFormGameTestBodies {
             ZombieForm expectedTo,
             PlayerZombieData expectedData,
             String label) {
-        helper.assertTrue(observer.preCount == 1,
+        GameTestAssertions.assertTrue(helper, observer.preCount == 1,
                 label + " must publish Transform Pre exactly once");
-        helper.assertTrue(observer.prePlayer == player,
+        GameTestAssertions.assertTrue(helper, observer.prePlayer == player,
                 label + " Transform Pre must expose the transforming player");
-        helper.assertTrue(observer.preEntityId == expectedEntityId,
+        GameTestAssertions.assertTrue(helper, observer.preEntityId == expectedEntityId,
                 label + " Transform Pre must use the stable player entity ID");
-        helper.assertTrue(observer.preFrom == expectedFrom && observer.preTo == expectedTo,
+        GameTestAssertions.assertTrue(helper, observer.preFrom == expectedFrom && observer.preTo == expectedTo,
                 label + " Transform Pre must carry " + expectedFrom + " -> " + expectedTo);
-        helper.assertTrue(observer.preAttachmentRead,
+        GameTestAssertions.assertTrue(helper, observer.preAttachmentRead,
                 label + " Transform Pre timing probe must read the already-established attachment");
-        helper.assertTrue(expectedData.equals(observer.preData),
+        GameTestAssertions.assertTrue(helper, expectedData.equals(observer.preData),
                 label + " Transform Pre must run before any state or flag write");
-        helper.assertTrue(Math.abs(observer.preScale - 0.5) <= ATTRIBUTE_EPSILON,
+        GameTestAssertions.assertTrue(helper, Math.abs(observer.preScale - 0.5) <= ATTRIBUTE_EPSILON,
                 label + " Transform Pre must run before any attribute side effect");
-        helper.assertTrue(Float.compare(observer.preMaxHealth, 20.0F) == 0,
+        GameTestAssertions.assertTrue(helper, Float.compare(observer.preMaxHealth, 20.0F) == 0,
                 label + " Transform Pre must observe the old max health");
-        helper.assertTrue(Float.compare(observer.preHealth, 7.0F) == 0,
+        GameTestAssertions.assertTrue(helper, Float.compare(observer.preHealth, 7.0F) == 0,
                 label + " Transform Pre must run before any healing side effect");
     }
 
@@ -1307,17 +1310,17 @@ final class IAmZombieFormGameTestBodies {
             ZombieForm expectedTo,
             PlayerZombieData expectedData,
             String label) {
-        helper.assertTrue(observer.postCount == 1,
+        GameTestAssertions.assertTrue(helper, observer.postCount == 1,
                 label + " must publish Transform Post exactly once");
-        helper.assertTrue(observer.postPlayer == player,
+        GameTestAssertions.assertTrue(helper, observer.postPlayer == player,
                 label + " Transform Post must expose the transformed player");
-        helper.assertTrue(observer.postEntityId == expectedEntityId,
+        GameTestAssertions.assertTrue(helper, observer.postEntityId == expectedEntityId,
                 label + " Transform Post must use the expected entity ID");
-        helper.assertTrue(observer.postFrom == expectedFrom && observer.postTo == expectedTo,
+        GameTestAssertions.assertTrue(helper, observer.postFrom == expectedFrom && observer.postTo == expectedTo,
                 label + " Transform Post must carry " + expectedFrom + " -> " + expectedTo);
-        helper.assertTrue(observer.postAttachmentRead,
+        GameTestAssertions.assertTrue(helper, observer.postAttachmentRead,
                 label + " Transform Post timing probe must read the committed attachment");
-        helper.assertTrue(expectedData.equals(observer.postData),
+        GameTestAssertions.assertTrue(helper, expectedData.equals(observer.postData),
                 label + " Transform Post must observe the single committed state-and-flags value");
     }
 
@@ -1327,10 +1330,10 @@ final class IAmZombieFormGameTestBodies {
             int entityId,
             int expected,
             String label) {
-        helper.assertTrue(payloadTargets.size() == expected,
+        GameTestAssertions.assertTrue(helper, payloadTargets.size() == expected,
                 label + " expected exactly " + expected + " PLAYER_ZOMBIE payload(s), got "
                         + payloadTargets);
-        helper.assertTrue(countTarget(payloadTargets, entityId) == expected,
+        GameTestAssertions.assertTrue(helper, countTarget(payloadTargets, entityId) == expected,
                 label + " expected exactly " + expected + " PLAYER_ZOMBIE payload(s) for entity "
                         + entityId + ", got " + payloadTargets);
     }
@@ -1341,15 +1344,15 @@ final class IAmZombieFormGameTestBodies {
             int temporaryEntityId,
             int finalEntityId,
             String label) {
-        helper.assertTrue(temporaryEntityId != finalEntityId,
+        GameTestAssertions.assertTrue(helper, temporaryEntityId != finalEntityId,
                 label + " requires distinct temporary and final entity IDs");
-        helper.assertTrue(payloadTargets.size() == 2,
+        GameTestAssertions.assertTrue(helper, payloadTargets.size() == 2,
                 label + " must emit only the handler update and mandatory initial snapshot, got "
                         + payloadTargets);
-        helper.assertTrue(countTarget(payloadTargets, temporaryEntityId) == 1,
+        GameTestAssertions.assertTrue(helper, countTarget(payloadTargets, temporaryEntityId) == 1,
                 label + " must emit exactly one handler update for temporary entity ID "
                         + temporaryEntityId + ", got " + payloadTargets);
-        helper.assertTrue(countTarget(payloadTargets, finalEntityId) == 1,
+        GameTestAssertions.assertTrue(helper, countTarget(payloadTargets, finalEntityId) == 1,
                 label + " must emit exactly one mandatory initial snapshot for final entity ID "
                         + finalEntityId + ", got " + payloadTargets);
     }
@@ -1401,33 +1404,33 @@ final class IAmZombieFormGameTestBodies {
             ServerPlayer newPlayer,
             ServerGamePacketListenerImpl listener,
             String label) {
-        helper.assertTrue(newPlayer != oldPlayer,
+        GameTestAssertions.assertTrue(helper, newPlayer != oldPlayer,
                 label + " must create a fresh ServerPlayer instance");
-        helper.assertTrue(newPlayer.getUUID().equals(playerId),
+        GameTestAssertions.assertTrue(helper, newPlayer.getUUID().equals(playerId),
                 label + " fresh player must retain the original UUID");
-        helper.assertTrue(oldPlayer.isRemoved(),
+        GameTestAssertions.assertTrue(helper, oldPlayer.isRemoved(),
                 label + " must remove the dead ServerPlayer during respawn");
-        helper.assertTrue(level.getServer().getPlayerList().getPlayersByUUID().get(playerId) == newPlayer,
+        GameTestAssertions.assertTrue(helper, level.getServer().getPlayerList().getPlayer(playerId) == newPlayer,
                 label + " PlayerList UUID map must point to the fresh instance");
-        helper.assertTrue(level.getServer().getPlayerList().getPlayers().stream()
+        GameTestAssertions.assertTrue(helper, level.getServer().getPlayerList().getPlayers().stream()
                         .filter(player -> playerId.equals(player.getUUID())).count() == 1,
                 label + " PlayerList must contain exactly one same-UUID player");
-        helper.assertTrue(level.getServer().getPlayerList().getPlayers().stream()
+        GameTestAssertions.assertTrue(helper, level.getServer().getPlayerList().getPlayers().stream()
                         .anyMatch(player -> player == newPlayer),
                 label + " PlayerList must contain the fresh instance");
-        helper.assertFalse(level.getServer().getPlayerList().getPlayers().stream()
+        GameTestAssertions.assertFalse(helper, level.getServer().getPlayerList().getPlayers().stream()
                         .anyMatch(player -> player == oldPlayer),
                 label + " PlayerList must not retain the dead instance");
-        helper.assertTrue(level.players().stream()
+        GameTestAssertions.assertTrue(helper, level.players().stream()
                         .filter(player -> playerId.equals(player.getUUID())).count() == 1,
                 label + " level must contain exactly one same-UUID player");
-        helper.assertTrue(level.players().stream().anyMatch(player -> player == newPlayer),
+        GameTestAssertions.assertTrue(helper, level.players().stream().anyMatch(player -> player == newPlayer),
                 label + " level must contain the fresh instance");
-        helper.assertFalse(level.players().stream().anyMatch(player -> player == oldPlayer),
+        GameTestAssertions.assertFalse(helper, level.players().stream().anyMatch(player -> player == oldPlayer),
                 label + " level must not retain the dead instance");
-        helper.assertTrue(level.getEntity(playerId) == newPlayer,
+        GameTestAssertions.assertTrue(helper, level.getEntity(playerId) == newPlayer,
                 label + " level UUID index must point to the fresh instance");
-        helper.assertTrue(listener.getPlayer() == newPlayer && newPlayer.connection == listener,
+        GameTestAssertions.assertTrue(helper, listener.getPlayer() == newPlayer && newPlayer.connection == listener,
                 label + " connection listener must switch to and remain on the fresh instance");
     }
 

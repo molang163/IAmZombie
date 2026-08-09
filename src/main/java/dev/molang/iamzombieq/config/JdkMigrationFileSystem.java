@@ -9,7 +9,6 @@ import java.nio.channels.OverlappingFileLockException;
 import java.nio.channels.SeekableByteChannel;
 import java.nio.file.DirectoryStream;
 import java.nio.file.FileAlreadyExistsException;
-import java.nio.file.FileStore;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -29,15 +28,48 @@ import java.util.Set;
 
 final class JdkMigrationFileSystem
         implements MigrationFileSystem, MigrationDirectorySession.Factory {
+    private final MigrationIdentityPolicy identityPolicy;
     private final ContentOpenHook contentOpenHook;
+    private final int observedJavaFeature;
 
     JdkMigrationFileSystem() {
-        this(ContentOpenHook.none());
+        this(ContentOpenHook.none(), Runtime.version().feature());
     }
 
     JdkMigrationFileSystem(ContentOpenHook contentOpenHook) {
+        this(contentOpenHook, Runtime.version().feature());
+    }
+
+    JdkMigrationFileSystem(
+            ContentOpenHook contentOpenHook, int observedJavaFeature) {
+        this(
+                new MigrationIdentityPolicy(observedJavaFeature),
+                contentOpenHook,
+                observedJavaFeature);
+    }
+
+    JdkMigrationFileSystem(
+            MigrationIdentityPolicy identityPolicy,
+            ContentOpenHook contentOpenHook) {
+        this(
+                identityPolicy,
+                contentOpenHook,
+                Runtime.version().feature());
+    }
+
+    JdkMigrationFileSystem(
+            MigrationIdentityPolicy identityPolicy,
+            ContentOpenHook contentOpenHook,
+            int observedJavaFeature) {
+        this.identityPolicy =
+                Objects.requireNonNull(identityPolicy, "identityPolicy");
         this.contentOpenHook =
                 Objects.requireNonNull(contentOpenHook, "contentOpenHook");
+        if (observedJavaFeature <= 0) {
+            throw new IllegalArgumentException(
+                    "Invalid observed Java feature: " + observedJavaFeature);
+        }
+        this.observedJavaFeature = observedJavaFeature;
     }
 
     MigrationPathState classify(Path path) {
@@ -52,22 +84,7 @@ final class JdkMigrationFileSystem
     DirectoryObservation observeDirectory(Path path) {
         Objects.requireNonNull(path, "path");
         try {
-            BasicFileAttributes attributes = Files.readAttributes(
-                    path,
-                    BasicFileAttributes.class,
-                    LinkOption.NOFOLLOW_LINKS);
-            if (attributes.isSymbolicLink() || !attributes.isDirectory()) {
-                return new DirectoryObservation(
-                        MigrationPathState.UNSAFE,
-                        "path is a symbolic link or not a directory",
-                        null);
-            }
-            if (attributes.fileKey() == null) {
-                return new DirectoryObservation(
-                        MigrationPathState.UNKNOWN,
-                        "directory identity is unavailable",
-                        null);
-            }
+            identityPolicy.directoryIdentity(path);
             return new DirectoryObservation(
                     MigrationPathState.PRESENT,
                     "safe directory",
@@ -77,6 +94,11 @@ final class JdkMigrationFileSystem
                     MigrationPathState.ABSENT,
                     "directory is absent",
                     absent);
+        } catch (MigrationIdentityPolicy.UnsafePathException unsafe) {
+            return new DirectoryObservation(
+                    MigrationPathState.UNSAFE,
+                    unsafe.getMessage(),
+                    unsafe);
         } catch (IOException failure) {
             return new DirectoryObservation(
                     MigrationPathState.UNKNOWN,
@@ -138,10 +160,7 @@ final class JdkMigrationFileSystem
     public MigrationPathState.Metadata readNofollowMetadata(Path path)
             throws IOException {
         Objects.requireNonNull(path, "path");
-        return metadata(Files.readAttributes(
-                path,
-                BasicFileAttributes.class,
-                LinkOption.NOFOLLOW_LINKS));
+        return identityPolicy.regularFileMetadata(path);
     }
 
     @Override
@@ -153,25 +172,15 @@ final class JdkMigrationFileSystem
         ArrayList<MigrationBinding.Ancestor> ancestors =
                 new ArrayList<>(ancestorPaths.size());
 
-        BasicFileAttributes parentAttributes = null;
+        String parentIdentity = null;
         for (Path ancestor : ancestorPaths) {
-            BasicFileAttributes attributes = Files.readAttributes(
-                    ancestor,
-                    BasicFileAttributes.class,
-                    LinkOption.NOFOLLOW_LINKS);
-            if (!attributes.isDirectory()
-                    || attributes.isSymbolicLink()
-                    || attributes.fileKey() == null) {
-                throw new IOException(
-                        "Unsafe or untrusted migration ancestor: " + ancestor);
-            }
-            String identity = attributes.fileKey().toString();
+            String identity = identityPolicy.directoryIdentity(ancestor);
             ancestors.add(new MigrationBinding.Ancestor(ancestor, identity));
             if (ancestor.equals(logicalParent)) {
-                parentAttributes = attributes;
+                parentIdentity = identity;
             }
         }
-        if (parentAttributes == null) {
+        if (parentIdentity == null) {
             throw new IOException(
                     "Could not observe migration target parent: " + logicalParent);
         }
@@ -182,7 +191,6 @@ final class JdkMigrationFileSystem
             throw new IOException(
                     "Untrusted physical migration parent: " + physicalParent);
         }
-        FileStore store = Files.getFileStore(physicalParent);
         String providerIdentity = logicalParent.getFileSystem()
                         .provider()
                         .getScheme()
@@ -191,18 +199,18 @@ final class JdkMigrationFileSystem
                         .provider()
                         .getClass()
                         .getName();
-        String fileStoreIdentity =
-                store.name() + "|" + store.type() + "|" + store.getClass().getName();
+        String fileStoreIdentity = identityPolicy.bindingFileStoreIdentity(
+                logicalParent, physicalParent, parentIdentity);
 
         return new MigrationBinding.Observation(
                 checkedTarget,
                 logicalParent,
                 physicalParent,
                 ancestors,
-                parentAttributes.fileKey().toString(),
+                parentIdentity,
                 providerIdentity,
                 fileStoreIdentity,
-                Runtime.version().feature(),
+                observedJavaFeature,
                 System.getProperty("os.name", "unknown"));
     }
 
@@ -291,7 +299,7 @@ final class JdkMigrationFileSystem
         String identity =
                 attributes.fileKey() == null ? "" : attributes.fileKey().toString();
         return new MigrationPathState.Metadata(
-                attributes.isRegularFile(),
+                attributes.isRegularFile() && !attributes.isOther(),
                 attributes.isSymbolicLink(),
                 identity,
                 attributes.size());
@@ -515,7 +523,7 @@ final class JdkMigrationFileSystem
                 throw new IllegalStateException(
                         "Permanent lock acquisition was already attempted");
             }
-            lockPort = new LockPort(targetBackend);
+            lockPort = new LockPort(targetBackend, profile);
             PermanentMigrationLock.Acquisition acquired =
                     new PermanentMigrationLock(
                                     lockPort,
@@ -530,7 +538,10 @@ final class JdkMigrationFileSystem
                                     expectedIdentity,
                                     request.profile(),
                                     request.strongRequired(),
-                                    request.allowEmptyFirstCreationRecovery()),
+                                    request.allowEmptyFirstCreationRecovery(),
+                                    fileSystem.identityPolicy
+                                            .emptyLockRecoveryPolicy(
+                                                    request.profile(), binding)),
                             () -> request.allowEmptyFirstCreationRecovery()
                                     ? hasEmptyFirstCreationPortrait(request)
                                     : !request.requireTargetAbsent()
@@ -1216,11 +1227,14 @@ final class JdkMigrationFileSystem
     private static final class LockPort
             implements PermanentMigrationLock.Port, AutoCloseable {
         private final OperationalBackend backend;
+        private final MigrationAccessProfile profile;
         private FileChannel channel;
         private FileLock lock;
 
-        private LockPort(OperationalBackend backend) {
+        private LockPort(
+                OperationalBackend backend, MigrationAccessProfile profile) {
             this.backend = Objects.requireNonNull(backend, "backend");
+            this.profile = Objects.requireNonNull(profile, "profile");
         }
 
         @Override
@@ -1325,6 +1339,62 @@ final class JdkMigrationFileSystem
                     PermanentMigrationLock.payloadSha256(bytes))) {
                 throw new IOException(
                         "Permanent lock payload changed: " + basename);
+            }
+            if (profile == MigrationAccessProfile.BASIC) {
+                verifyPathnameReopensAsHeldFile(
+                        basename, expectedIdentity, bytes.length);
+            }
+        }
+
+        private void verifyPathnameReopensAsHeldFile(
+                String basename, String expectedIdentity, int heldSize)
+                throws IOException {
+            requireSamePathnameMetadata(
+                    basename, expectedIdentity, heldSize);
+            requireOverlappingHeldLock(basename);
+            requireSamePathnameMetadata(
+                    basename, expectedIdentity, heldSize);
+            requireOverlappingHeldLock(basename);
+            requireSamePathnameMetadata(
+                    basename, expectedIdentity, heldSize);
+        }
+
+        private void requireOverlappingHeldLock(String basename)
+                throws IOException {
+            // Windows byte-range locks are mandatory, so a rebound handle
+            // must not read the payload while the original whole-file lock is
+            // held. The JVM-wide overlap check instead proves that this
+            // NOFOLLOW pathname reopen names the held file; the payload SHA is
+            // calculated from the original locked channel above.
+            try (FileChannel rebound = backend.openFile(
+                    basename,
+                    Set.of(
+                            StandardOpenOption.READ,
+                            StandardOpenOption.WRITE,
+                            LinkOption.NOFOLLOW_LINKS))) {
+                try (FileLock unexpected = rebound.tryLock()) {
+                    throw new IOException(
+                            "Permanent lock pathname no longer resolves to the "
+                                    + "held file: "
+                                    + basename);
+                } catch (OverlappingFileLockException expectedSameFile) {
+                    // The JVM-wide overlap proves the pathname reopened the
+                    // same file whose original channel still holds the lock.
+                }
+            }
+        }
+
+        private void requireSamePathnameMetadata(
+                String basename, String expectedIdentity, int heldSize)
+                throws IOException {
+            MigrationPathState.Metadata metadata = safeRegular(
+                    backend.readNofollowMetadata(basename), basename);
+            if (!expectedIdentity.equals(metadata.identity())
+                    || heldSize != metadata.size()) {
+                throw new IOException(
+                        "Permanent lock pathname metadata differs from the "
+                                + "held file: "
+                                + basename);
             }
         }
 

@@ -56,7 +56,7 @@ class ExtensionAddonConsumerCompilationTest {
         Files.writeString(sourceFile, fixtureSource, StandardCharsets.UTF_8);
 
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-        assertNotNull(compiler, "the Java 25 JDK compiler must be available to compile the addon fixture");
+        assertNotNull(compiler, "the active node's JDK compiler must be available to compile the addon fixture");
         DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
         try (StandardJavaFileManager fileManager =
                      compiler.getStandardFileManager(diagnostics, Locale.ROOT, StandardCharsets.UTF_8)) {
