@@ -67,7 +67,7 @@ class StonecutterScaffoldSourceTest {
                         "mod.id", "iamzombieq",
                         "mod.name", "I Am Zombie?",
                         "mod.license", "MIT",
-                        "mod.version", "1.1.2",
+                        "mod.version", "1.1.3",
                         "mod.group", "dev.molang.iamzombieq"),
                 sections.get(""));
         assertNode(
@@ -174,6 +174,8 @@ class StonecutterScaffoldSourceTest {
         assertTrue(build.contains("version=modVersion"),
                 "the Gradle and metadata version must come from the central release coordinate");
         assertFalse(build.contains("$modVersion+"), "the node identity must not be appended to the mod version");
+        assertTrue(build.contains("archiveFileName=\"${modId}-${modVersion}+mc${minecraftVersion}.jar\""),
+                "release JAR names must distinguish the exact Minecraft target without changing mod.version");
         assertTrue(build.contains("JavaLanguageVersion.of(requiredJava)"));
         assertTrue(build.contains("version=neoVersion"));
         assertTrue(build.contains("workingDir=rootProject.projectDir"),
@@ -207,13 +209,13 @@ class StonecutterScaffoldSourceTest {
 
     @Test
     void generatedMetadataCarriesTheExactReleaseVersion() throws IOException {
-        assertEquals("1.1.2", parseToml(CENTRAL_PROPERTIES).get("").get("mod.version"));
+        assertEquals("1.1.3", parseToml(CENTRAL_PROPERTIES).get("").get("mod.version"));
         try (InputStream input = StonecutterScaffoldSourceTest.class
                 .getResourceAsStream("/META-INF/neoforge.mods.toml")) {
             assertNotNull(input, "generated NeoForge metadata must be present on the test runtime");
             String metadata = new String(input.readAllBytes(), StandardCharsets.UTF_8);
-            assertTrue(metadata.contains("version=\"1.1.2\""),
-                    "generated metadata must carry the frozen 1.1.2 release coordinate");
+            assertTrue(metadata.contains("version=\"1.1.3\""),
+                    "generated metadata must carry the frozen 1.1.3 release coordinate");
             assertFalse(metadata.contains("${mod_version}"),
                     "release metadata must not retain an unexpanded version placeholder");
         }

@@ -530,6 +530,7 @@ def manualTestFunctionNames = [
 ]
 
 tasks.named('jar', Jar).configure {
+    archiveFileName = "${modId}-${modVersion}+mc${minecraftVersion}.jar"
     exclude 'data/iamzombieq/function/test/**'
 }
 
