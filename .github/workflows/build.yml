@@ -21,10 +21,11 @@ jobs:
         with:
           java-version: '25'
           distribution: temurin
-          cache: gradle
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-disabled: true
 
       - name: Select canonical node
         run: ./gradlew 'Set active project to 26.2.x'
