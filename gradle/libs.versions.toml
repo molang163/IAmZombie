@@ -1,5 +1,5 @@
 [versions]
-moddev = "2.0.141"
+moddev = "2.0.143"
 junit = "5.13.4"
 
 [libraries]
