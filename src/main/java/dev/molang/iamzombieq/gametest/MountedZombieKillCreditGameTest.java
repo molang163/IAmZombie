@@ -92,7 +92,7 @@ final class MountedZombieKillCreditGameTest {
         }
 
         if (!failures.isEmpty()) {
-            GameTestAssertions.fail(helper, String.join(" | ", failures));
+            GameTestAssertions.fail(helper, "LOOT1-FIX1: " + String.join(" | ", failures));
             return;
         }
         helper.succeed();
