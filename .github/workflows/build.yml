@@ -1,37 +1,56 @@
 name: Build
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
 
 jobs:
   build:
+    name: ${{ matrix.node }} / Java ${{ matrix.java }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - node: 1.21.8
+            java: '22'
+            game_test: false
+          - node: 1.21.10
+            java: '22'
+            game_test: false
+          - node: 1.21.11
+            java: '25'
+            game_test: false
+          - node: 26.1.x
+            java: '25'
+            game_test: false
+          - node: 26.2.x
+            java: '25'
+            game_test: true
     concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}
+      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.node }}
       cancel-in-progress: true
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup JDK 25
+      - name: Setup JDK ${{ matrix.java }}
         uses: actions/setup-java@v4
         with:
-          java-version: '25'
-          distribution: 'temurin'
+          java-version: ${{ matrix.java }}
+          distribution: temurin
           cache: gradle
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build with Gradle
-        run: ./gradlew build
+      - name: Select node
+        run: ./gradlew 'Set active project to ${{ matrix.node }}'
 
-      - name: Run GameTests
-        run: ./gradlew runGameTestServer
+      - name: Test and build
+        run: ./gradlew ':${{ matrix.node }}:build'
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-artifacts
-          path: build/libs/*.jar
-          if-no-files-found: warn
+      - name: Run required GameTests
+        if: matrix.game_test
+        run: ./gradlew ':${{ matrix.node }}:runGameTestServer'
